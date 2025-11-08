@@ -61,7 +61,13 @@ export async function PATCH(
     }
 
     const { id: projectId } = await params;
-    const body = await request.json() as { name?: string; description?: string };
+    const body = await request.json() as {
+      name?: string;
+      description?: string | null;
+      vibe?: string | null;
+      strict?: boolean;
+      timeframe?: number | null;
+    };
 
     // Check if project exists and belongs to user
     const project = await prisma.project.findFirst({
@@ -76,16 +82,63 @@ export async function PATCH(
     }
 
     // Validate input
-    if (!body.name && !body.description) {
-      return NextResponse.json({ error: "At least name or description must be provided" }, { status: 400 });
+    if (
+      body.name === undefined &&
+      body.description === undefined &&
+      body.vibe === undefined &&
+      body.strict === undefined &&
+      body.timeframe === undefined
+    ) {
+      return NextResponse.json({ error: "At least one field must be provided" }, { status: 400 });
     }
 
     if (body.name && typeof body.name !== "string") {
       return NextResponse.json({ error: "Name must be a string" }, { status: 400 });
     }
 
-    if (body.description !== undefined && typeof body.description !== "string") {
+    if (body.description !== undefined && body.description !== null && typeof body.description !== "string") {
       return NextResponse.json({ error: "Description must be a string" }, { status: 400 });
+    }
+
+    if (body.vibe !== undefined && body.vibe !== null && typeof body.vibe !== "string") {
+      return NextResponse.json({ error: "Vibe must be a string" }, { status: 400 });
+    }
+
+    if (body.strict !== undefined && typeof body.strict !== "boolean") {
+      return NextResponse.json({ error: "Strict must be a boolean" }, { status: 400 });
+    }
+
+    if (body.timeframe !== undefined && body.timeframe !== null) {
+      if (typeof body.timeframe !== "number" || !Number.isFinite(body.timeframe)) {
+        return NextResponse.json({ error: "Timeframe must be a finite number" }, { status: 400 });
+      }
+      if (!Number.isInteger(body.timeframe) || body.timeframe < 0) {
+        return NextResponse.json({ error: "Timeframe must be a non-negative integer" }, { status: 400 });
+      }
+    }
+
+    const trimmedVibe = body.vibe?.trim();
+
+    const updateData: Record<string, unknown> = {};
+
+    if (body.name !== undefined) {
+      updateData.name = body.name;
+    }
+
+    if (body.description !== undefined) {
+      updateData.description = body.description ?? null;
+    }
+
+    if (body.vibe !== undefined) {
+      updateData.vibe = trimmedVibe ? trimmedVibe : null;
+    }
+
+    if (body.strict !== undefined) {
+      updateData.strict = body.strict;
+    }
+
+    if (body.timeframe !== undefined) {
+      updateData.timeframe = body.timeframe ?? 0;
     }
 
     // Update the project
@@ -93,10 +146,7 @@ export async function PATCH(
       where: {
         id: projectId,
       },
-      data: {
-        ...(body.name && { name: body.name }),
-        ...(body.description !== undefined && { description: body.description }),
-      },
+      data: updateData,
     });
 
     return NextResponse.json({ success: true, project: updatedProject });

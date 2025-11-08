@@ -21,7 +21,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Plus, Edit, Trash2, AlertTriangle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, Plus, Edit, Trash2, AlertTriangle, Info } from "lucide-react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -30,6 +33,9 @@ interface Project {
   id: string;
   name: string;
   description: string | null;
+  vibe: string | null;
+  strict: boolean;
+  timeframe: number;
   createdAt: string;
 }
 
@@ -40,6 +46,9 @@ export default function Dashboard() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [projectName, setProjectName] = useState("");
   const [description, setDescription] = useState("");
+  const [vibe, setVibe] = useState("");
+  const [strictMode, setStrictMode] = useState(false);
+  const [timeframe, setTimeframe] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [message, setMessage] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -47,6 +56,9 @@ export default function Dashboard() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editVibe, setEditVibe] = useState("");
+  const [editStrictMode, setEditStrictMode] = useState(false);
+  const [editTimeframe, setEditTimeframe] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -89,6 +101,16 @@ export default function Dashboard() {
     setIsCreating(true);
     setMessage("");
     try {
+      const trimmedVibe = vibe.trim();
+      const timeframeValue = timeframe.trim();
+      const parsedTimeframe = timeframeValue ? Number.parseInt(timeframeValue, 10) : 0;
+
+      if (timeframeValue && (Number.isNaN(parsedTimeframe) || parsedTimeframe < 0)) {
+        setMessage("Timeframe must be a non-negative integer.");
+        setIsCreating(false);
+        return;
+      }
+
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: {
@@ -97,6 +119,9 @@ export default function Dashboard() {
         body: JSON.stringify({
           name: projectName,
           description: description || undefined,
+          vibe: trimmedVibe || undefined,
+          strict: strictMode,
+          timeframe: parsedTimeframe * 1000, // Convert seconds to milliseconds
         }),
       });
       const data = await res.json() as { error?: string; success?: boolean; project?: Project };
@@ -104,6 +129,9 @@ export default function Dashboard() {
         setMessage("Project created successfully!");
         setProjectName("");
         setDescription("");
+        setVibe("");
+        setStrictMode(false);
+        setTimeframe("");
         setIsModalOpen(false);
         setErrorMessage("");
         fetchProjects(); // Refresh the list
@@ -120,6 +148,9 @@ export default function Dashboard() {
     setEditingProject(project);
     setEditName(project.name);
     setEditDescription(project.description || "");
+    setEditVibe(project.vibe || "");
+    setEditStrictMode(project.strict ?? false);
+    setEditTimeframe(project.timeframe ? String(project.timeframe) : "");
     setErrorMessage("");
     setIsEditModalOpen(true);
   };
@@ -129,6 +160,16 @@ export default function Dashboard() {
     if (!editingProject) return;
     setIsUpdating(true);
     try {
+      const trimmedVibe = editVibe.trim();
+      const timeframeValue = editTimeframe.trim();
+      const parsedTimeframe = timeframeValue ? Number.parseInt(timeframeValue, 10) : 0;
+
+      if (timeframeValue && (Number.isNaN(parsedTimeframe) || parsedTimeframe < 0)) {
+        setErrorMessage("Timeframe must be a non-negative integer.");
+        setIsUpdating(false);
+        return;
+      }
+
       const res = await fetch(`/api/projects/${editingProject.id}`, {
         method: "PATCH",
         headers: {
@@ -137,6 +178,9 @@ export default function Dashboard() {
         body: JSON.stringify({
           name: editName,
           description: editDescription || undefined,
+          vibe: trimmedVibe || null,
+          strict: editStrictMode,
+          timeframe: parsedTimeframe * 1000, // Convert seconds to milliseconds
         }),
       });
       const data = await res.json() as { error?: string; success?: boolean; project?: Project };
@@ -144,6 +188,9 @@ export default function Dashboard() {
         setIsEditModalOpen(false);
         setEditingProject(null);
         setErrorMessage("");
+        setEditVibe("");
+        setEditStrictMode(false);
+        setEditTimeframe("");
         fetchProjects(); // Refresh the list
       } else {
         setErrorMessage(data.error || "Failed to update project");
@@ -265,8 +312,22 @@ export default function Dashboard() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="desc" className="mb-2">
+                      <Label htmlFor="desc" className="mb-2 flex items-center gap-2">
                         Description (optional)
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-foreground transition"
+                              aria-label="How the description is used"
+                            >
+                              <Info className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            This text is shared with the AI to set context for generated speech.
+                          </TooltipContent>
+                        </Tooltip>
                       </Label>
                       <Input
                         id="desc"
@@ -274,6 +335,101 @@ export default function Dashboard() {
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)}
                         placeholder="Enter project description"
                       />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Keep this concise—everything here is visible to the AI narrator.
+                      </p>
+                    </div>
+                    <div>
+                      <Label htmlFor="vibe" className="mb-2 flex items-center gap-2">
+                        Vibe
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-foreground transition"
+                              aria-label="What vibe means"
+                            >
+                              <Info className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Select the tone you want for the narration.
+                          </TooltipContent>
+                        </Tooltip>
+                      </Label>
+                      <Select value={vibe} onValueChange={setVibe}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a vibe..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Playful">Playful</SelectItem>
+                          <SelectItem value="Authoritative">Authoritative</SelectItem>
+                          <SelectItem value="Warm">Warm</SelectItem>
+                          <SelectItem value="Professional">Professional</SelectItem>
+                          <SelectItem value="Dramatic">Dramatic</SelectItem>
+                          <SelectItem value="Neutral">Neutral</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="strict-mode"
+                          checked={strictMode}
+                          onCheckedChange={(checked) => setStrictMode(checked === true)}
+                        />
+                        <Label htmlFor="strict-mode" className="flex items-center gap-2">
+                          Strict mode
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-foreground transition"
+                                aria-label="Strict mode details"
+                              >
+                                <Info className="h-4 w-4" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              When enabled, the AI sticks closely to your description and vibe.
+                            </TooltipContent>
+                          </Tooltip>
+                        </Label>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Recommended for compliance-heavy projects; leave off for more creative delivery.
+                      </p>
+                    </div>
+                    <div>
+                      <Label htmlFor="timeframe" className="mb-2 flex items-center gap-2">
+                        Target timeframe (seconds)
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-foreground transition"
+                              aria-label="Timeframe details"
+                            >
+                              <Info className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Seconds the narration should roughly last. Use 0 to skip targeting.
+                          </TooltipContent>
+                        </Tooltip>
+                      </Label>
+                      <Input
+                        id="timeframe"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={timeframe}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTimeframe(e.target.value)}
+                        placeholder="60"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Example: 60 equals about 60 seconds of audio.
+                      </p>
                     </div>
                     <Button
                       type="submit"
@@ -320,6 +476,21 @@ export default function Dashboard() {
                                 {project.description}
                               </p>
                             )}
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mt-2">
+                              {project.vibe && (
+                                <span className="rounded-full border px-2 py-0.5">
+                                  Vibe: {project.vibe}
+                                </span>
+                              )}
+                              <span className="rounded-full border px-2 py-0.5">
+                                Strict: {project.strict ? "On" : "Off"}
+                              </span>
+                              {project.timeframe > 0 && (
+                                <span className="rounded-full border px-2 py-0.5">
+                                  Target: {Math.round(project.timeframe / 1000)}s
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-muted-foreground mt-2">
                               Created:{" "}
                               {new Date(project.createdAt).toLocaleDateString()}
@@ -376,8 +547,22 @@ export default function Dashboard() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="edit-desc" className="mb-2">
+                    <Label htmlFor="edit-desc" className="mb-2 flex items-center gap-2">
                       Description (optional)
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground transition"
+                            aria-label="How the description is used"
+                          >
+                            <Info className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          This description is provided to the AI verbatim as project context.
+                        </TooltipContent>
+                      </Tooltip>
                     </Label>
                     <Input
                       id="edit-desc"
@@ -385,6 +570,98 @@ export default function Dashboard() {
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditDescription(e.target.value)}
                       placeholder="Enter project description"
                     />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-vibe" className="mb-2 flex items-center gap-2">
+                      Vibe
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground transition"
+                            aria-label="What vibe means"
+                          >
+                            <Info className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Select the tone you want for the narration.
+                        </TooltipContent>
+                      </Tooltip>
+                    </Label>
+                    <Select value={editVibe} onValueChange={setEditVibe}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a vibe..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Playful">Playful</SelectItem>
+                        <SelectItem value="Authoritative">Authoritative</SelectItem>
+                        <SelectItem value="Warm">Warm</SelectItem>
+                        <SelectItem value="Professional">Professional</SelectItem>
+                        <SelectItem value="Dramatic">Dramatic</SelectItem>
+                        <SelectItem value="Neutral">Neutral</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="edit-strict-mode"
+                        checked={editStrictMode}
+                        onCheckedChange={(checked) => setEditStrictMode(checked === true)}
+                      />
+                      <Label htmlFor="edit-strict-mode" className="flex items-center gap-2">
+                        Strict mode
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-foreground transition"
+                              aria-label="Strict mode details"
+                            >
+                              <Info className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Keeps narration tightly aligned to your prompts when enabled.
+                          </TooltipContent>
+                        </Tooltip>
+                      </Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Disable if you want the AI to improvise or ad-lib around your script.
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-timeframe" className="mb-2 flex items-center gap-2">
+                      Target timeframe (seconds)
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground transition"
+                            aria-label="Timeframe details"
+                          >
+                            <Info className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Seconds goal for the final audio. Set 0 to remove the constraint.
+                        </TooltipContent>
+                      </Tooltip>
+                    </Label>
+                    <Input
+                      id="edit-timeframe"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={editTimeframe}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditTimeframe(e.target.value)}
+                      placeholder="60"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Matching this duration is best-effort; narration may still vary slightly.
+                    </p>
                   </div>
                   <Button type="submit" disabled={isUpdating} className="w-full">
                     {isUpdating ? (

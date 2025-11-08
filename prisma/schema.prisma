@@ -95,6 +95,9 @@ model Project {
   id          String       @id @default(cuid()) @map("_id")
   name        String
   description String?
+  vibe        String?
+  strict      Boolean      @default(false)
+  timeframe   Int          @default(0)
   userId      String
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   uploads     AudioUpload[]

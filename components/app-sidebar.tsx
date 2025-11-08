@@ -25,6 +25,9 @@ interface Project {
   id: string;
   name: string;
   description: string | null;
+  vibe: string | null;
+  strict: boolean;
+  timeframe: number;
   createdAt: string;
 }
 
