@@ -84,8 +84,10 @@ model AudioUpload {
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   fileName  String
   fileData  String
+  fileHash  String
   createdAt DateTime @default(now())
 
+  @@unique([userId, fileHash])
   @@map("audioUpload")
 }
 

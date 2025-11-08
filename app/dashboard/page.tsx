@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,11 +9,48 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, Plus, Edit, Trash2, AlertTriangle } from "lucide-react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+}
 
 export default function Dashboard() {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [projectName, setProjectName] = useState("");
+  const [description, setDescription] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [message, setMessage] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
 
   const handleSignOut = async () => {
     await authClient.signOut({
@@ -24,6 +60,123 @@ export default function Dashboard() {
         },
       },
     });
+  };
+
+  const fetchProjects = async () => {
+    try {
+      const res = await fetch("/api/projects");
+      const data = await res.json() as { projects?: Project[]; error?: string };
+      if (res.ok && data.projects) {
+        setProjects(data.projects);
+      } else {
+        console.error("Failed to fetch projects:", data.error);
+      }
+    } catch (err) {
+      console.error("Error fetching projects:", err);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  };
+
+  useEffect(() => {
+    if (session) {
+      fetchProjects();
+    }
+  }, [session]);
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreating(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: projectName,
+          description: description || undefined,
+        }),
+      });
+      const data = await res.json() as { error?: string; success?: boolean; project?: Project };
+      if (res.ok) {
+        setMessage("Project created successfully!");
+        setProjectName("");
+        setDescription("");
+        setIsModalOpen(false);
+        setErrorMessage("");
+        fetchProjects(); // Refresh the list
+      } else {
+        setMessage(data.error || "Failed to create project");
+      }
+    } catch (err) {
+      setMessage("An error occurred");
+    }
+    setIsCreating(false);
+  };
+
+  const handleEditProject = (project: Project) => {
+    setEditingProject(project);
+    setEditName(project.name);
+    setEditDescription(project.description || "");
+    setErrorMessage("");
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProject) return;
+    setIsUpdating(true);
+    try {
+      const res = await fetch(`/api/projects/${editingProject.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: editName,
+          description: editDescription || undefined,
+        }),
+      });
+      const data = await res.json() as { error?: string; success?: boolean; project?: Project };
+      if (res.ok) {
+        setIsEditModalOpen(false);
+        setEditingProject(null);
+        setErrorMessage("");
+        fetchProjects(); // Refresh the list
+      } else {
+        setErrorMessage(data.error || "Failed to update project");
+      }
+    } catch (err) {
+      setErrorMessage("An error occurred");
+    }
+    setIsUpdating(false);
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    setProjectToDelete(projectId);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+    setIsDeleteConfirmOpen(false);
+    try {
+      const res = await fetch(`/api/projects/${projectToDelete}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setErrorMessage("");
+        fetchProjects(); // Refresh the list
+      } else {
+        const data = await res.json() as { error?: string };
+        setErrorMessage(data.error || "Failed to delete project");
+      }
+    } catch (err) {
+      setErrorMessage("An error occurred");
+    }
+    setProjectToDelete(null);
   };
 
   if (isPending) {
@@ -40,7 +193,9 @@ export default function Dashboard() {
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Not Logged In</CardTitle>
-            <CardDescription>Please log in to access the dashboard.</CardDescription>
+            <CardDescription>
+              Please log in to access the dashboard.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Button onClick={() => router.push("/")} className="w-full">
@@ -53,22 +208,235 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Dashboard</CardTitle>
-          <CardDescription>Welcome back!</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <p className="font-medium">Name: {session.user.name}</p>
-            <p className="text-sm text-muted-foreground">Email: {session.user.email}</p>
-          </div>
-          <Button onClick={handleSignOut} variant="destructive" className="w-full">
-            Sign Out
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+    <>
+      <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+        <div className="flex items-center gap-2 px-4">
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <h1 className="text-lg font-semibold">Dashboard</h1>
+        </div>
+      </header>
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <Card className="w-full max-w-4xl mx-auto">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">Dashboard</CardTitle>
+            <CardDescription>Welcome back!</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="font-medium">Name: {session.user.name}</p>
+              <p className="text-sm text-muted-foreground">
+                Email: {session.user.email}
+              </p>
+            </div>
+            <Separator />
+            {errorMessage && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>{errorMessage}</AlertDescription>
+              </Alert>
+            )}
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Your Projects</h3>
+              <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Project
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create New Project</DialogTitle>
+                    <DialogDescription>
+                      Enter the details for your new project.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleCreateProject} className="space-y-4">
+                    <div>
+                      <Label htmlFor="name" className="mb-2">
+                        Project Name
+                      </Label>
+                      <Input
+                        id="name"
+                        value={projectName}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProjectName(e.target.value)}
+                        required
+                        placeholder="Enter project name"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="desc" className="mb-2">
+                        Description (optional)
+                      </Label>
+                      <Input
+                        id="desc"
+                        value={description}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)}
+                        placeholder="Enter project description"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      disabled={isCreating}
+                      className="w-full"
+                    >
+                      {isCreating ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Creating...
+                        </>
+                      ) : (
+                        "Create Project"
+                      )}
+                    </Button>
+                    {message && (
+                      <p className="text-sm text-center text-muted-foreground">
+                        {message}
+                      </p>
+                    )}
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+            {isLoadingProjects ? (
+              <div className="flex justify-center">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : projects.length === 0 ? (
+              <p className="text-center text-muted-foreground">
+                No projects yet. Create your first project!
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {projects.map((project) => (
+                  <Link key={project.id} href={`/dashboard/project/${project.id}`}>
+                    <Card className="cursor-pointer hover:bg-muted/50 transition-colors">
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <h4 className="font-semibold">{project.name}</h4>
+                            {project.description && (
+                              <p className="text-sm text-muted-foreground">
+                                {project.description}
+                              </p>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Created:{" "}
+                              {new Date(project.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="flex space-x-2" onClick={(e) => e.preventDefault()}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleEditProject(project);
+                              }}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleDeleteProject(project.id);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+            )}
+            <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit Project</DialogTitle>
+                  <DialogDescription>
+                    Update the details for your project.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleUpdateProject} className="space-y-4">
+                  <div>
+                    <Label htmlFor="edit-name" className="mb-2">
+                      Project Name
+                    </Label>
+                    <Input
+                      id="edit-name"
+                      value={editName}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditName(e.target.value)}
+                      required
+                      placeholder="Enter project name"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-desc" className="mb-2">
+                      Description (optional)
+                    </Label>
+                    <Input
+                      id="edit-desc"
+                      value={editDescription}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditDescription(e.target.value)}
+                      placeholder="Enter project description"
+                    />
+                  </div>
+                  <Button type="submit" disabled={isUpdating} className="w-full">
+                    {isUpdating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Updating...
+                      </>
+                    ) : (
+                      "Update Project"
+                    )}
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+            <Dialog
+              open={isDeleteConfirmOpen}
+              onOpenChange={setIsDeleteConfirmOpen}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Delete Project</DialogTitle>
+                  <DialogDescription>
+                    Are you sure you want to delete this project? This action
+                    cannot be undone.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex justify-end space-x-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsDeleteConfirmOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={confirmDeleteProject}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+            <Button
+              onClick={handleSignOut}
+              variant="destructive"
+              className="w-full"
+            >
+              Sign Out
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </>
   );
 }

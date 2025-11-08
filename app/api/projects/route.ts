@@ -4,6 +4,34 @@ import { PrismaClient } from "@/generated/prisma/client";
 
 const prisma = new PrismaClient();
 
+export async function GET(request: NextRequest) {
+  try {
+    // Check authentication
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Fetch projects for the user
+    const projects = await prisma.project.findMany({
+      where: {
+        userId: session.user.id,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return NextResponse.json({ projects });
+  } catch (error) {
+    console.error("Error fetching projects:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
