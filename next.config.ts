@@ -1,13 +1,24 @@
-// next.config.ts
 import type { NextConfig } from "next";
+import { builtinModules } from "module"; // gives core Node modules
 
-// Enable getCloudflareContext() during `next dev`
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
-initOpenNextCloudflareForDev();
+// create dynamic alias map for all node: imports
+const nodeAliases = Object.fromEntries(
+  builtinModules.map((m) => [`node:${m}`, m])
+);
 
 const nextConfig: NextConfig = {
-  // Keep Prisma out of the Worker bundle (works with @prisma/client/edge, too)
-  serverExternalPackages: ["@prisma/client", ".prisma/client"],
+  webpack: (config) => {
+    // ensure alias object exists
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      ...nodeAliases,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;
+
+// added by create cloudflare to enable calling `getCloudflareContext()` in `next dev`
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+initOpenNextCloudflareForDev();
