@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { PrismaClient, Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
+import { PrismaClient } from "@prisma/client/edge";
+
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 
