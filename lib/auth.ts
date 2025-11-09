@@ -4,9 +4,24 @@ import { PrismaClient } from "@/generated/prisma/client";
 
 const prisma = new PrismaClient();
 export const auth = betterAuth({
+  trustedOrigins: [
+    "http://localhost:3000",
+    "http://10.90.86.105:3000"
+  ],
   database: prismaAdapter(prisma, {
     provider: "mongodb",
   }),
+  // ONLY WHILE USING LIVE SHARE
+  advanced: {
+    cookies: {
+      state: {
+        attributes: {
+          sameSite: "none",
+          secure: true,
+        }
+      }
+    }
+  },
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,

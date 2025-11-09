@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useState, useEffect } from "react"
+import { usePathname } from "next/navigation"
 import {
   Frame,
   GalleryVerticalEnd,
@@ -10,7 +11,6 @@ import {
 
 import { authClient } from "@/lib/auth-client"
 import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
 import { NavUser } from "@/components/nav-user"
 import { TeamSwitcher } from "@/components/team-switcher"
 import {
@@ -34,6 +34,7 @@ interface Project {
 export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sidebar> & { user?: { name: string; email: string; avatar: string | undefined } }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const { data: session } = authClient.useSession();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (session) {
@@ -53,10 +54,19 @@ export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sideb
     }
   };
 
-  // Expose refresh function globally for pages to call
-  React.useEffect(() => {
-    (window as any).refreshSidebarProjects = () => fetchProjects();
-  }, []);
+  // Determine which item should be active based on current path
+  const getActiveItem = () => {
+    // Check if we're on a project page (including subpages)
+    const projectMatch = pathname.match(/^\/dashboard\/project\/([^\/]+)/);
+    if (projectMatch) {
+      const projectId = projectMatch[1];
+      return `/dashboard/project/${projectId}`;
+    }
+    // Default to dashboard
+    return "/dashboard";
+  };
+
+  const activeUrl = getActiveItem();
 
   const data = {
     user: user,
@@ -64,7 +74,7 @@ export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sideb
       {
         name: "Speakify",
         logo: GalleryVerticalEnd,
-        plan: "Enterprise",
+        plan: "Speak better. Fast.",
       },
     ],
     navMain: [
@@ -72,16 +82,15 @@ export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sideb
         title: "Dashboard",
         url: "/dashboard",
         icon: SquareTerminal,
-        isActive: true,
-        items: [
-          {
-            title: "Projects",
-            url: "/dashboard",
-          },
-        ],
+        isActive: activeUrl === "/dashboard",
       },
+      ...projects.map(p => ({
+        title: p.name,
+        url: `/dashboard/project/${p.id}`,
+        icon: Frame,
+        isActive: activeUrl === `/dashboard/project/${p.id}`
+      })),
     ],
-    projects: projects.map(p => ({ name: p.name, url: `/dashboard/project/${p.id}`, icon: Frame })),
   }
 
   return (
@@ -91,7 +100,6 @@ export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sideb
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>
         {user && <NavUser user={user} />}

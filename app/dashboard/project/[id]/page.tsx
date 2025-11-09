@@ -19,13 +19,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Loader2, Edit, Trash2, AlertTriangle, Upload, Info, BarChart3 } from "lucide-react";
+import { Loader2, Edit, Trash2, AlertTriangle, Upload, Info, BarChart3, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import { motion } from "framer-motion";
 
 interface Project {
   id: string;
@@ -68,14 +68,7 @@ export default function ProjectPage() {
   const [isDeleteUploadDialogOpen, setIsDeleteUploadDialogOpen] = useState(false);
   const [selectedUploadToDelete, setSelectedUploadToDelete] = useState<AudioUpload | null>(null);
   const [isDeletingUpload, setIsDeletingUpload] = useState(false);
-
-  const formatTimeframe = (ms: number) => {
-    if (!ms || ms <= 0) {
-      return "No target set";
-    }
-    const seconds = ms / 1000;
-    return Number.isInteger(seconds) ? `${seconds}s` : `${seconds.toFixed(1)}s`;
-  };
+  const [editField, setEditField] = useState<string | null>(null);
 
   const fetchProject = async () => {
     try {
@@ -120,6 +113,25 @@ export default function ProjectPage() {
       fetchAudioUploads();
     }
   }, [session, projectId]);
+
+  useEffect(() => {
+    if (isEditModalOpen && editField) {
+      // Focus on the specific field after a short delay to ensure the modal is rendered
+      setTimeout(() => {
+        const elementId = editField === 'description' ? 'edit-desc' :
+                         editField === 'vibe' ? 'edit-vibe' :
+                         editField === 'strict' ? 'edit-strict' :
+                         editField === 'timeframe' ? 'edit-timeframe' : 'edit-name';
+        const element = document.getElementById(elementId);
+        if (element) {
+          element.focus();
+          if (element.tagName === 'INPUT') {
+            (element as HTMLInputElement).select();
+          }
+        }
+      }, 100);
+    }
+  }, [isEditModalOpen, editField]);
 
   const handleUpdateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -297,9 +309,11 @@ export default function ProjectPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={() => router.push("/")} className="w-full">
-              Go to Login
-            </Button>
+            <Link href="/">
+              <Button className="w-full">
+                Go to Login
+              </Button>
+            </Link>
           </CardContent>
         </Card>
       </div>
@@ -307,10 +321,14 @@ export default function ProjectPage() {
   }
 
   return (
-    <div>
-      <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+    <>
+      <motion.header
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12"
+      >
         <div className="flex items-center gap-2 px-4">
-          <Separator orientation="vertical" className="mr-2 h-4" />
           <nav className="flex items-center space-x-2 text-sm text-muted-foreground">
             <Link 
               href="/dashboard" 
@@ -324,57 +342,302 @@ export default function ProjectPage() {
             </span>
           </nav>
         </div>
-      </header>
-      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+      </motion.header>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+        className="flex flex-1 flex-col gap-4 py-2 px-8"
+      >
         {isLoading ? (
           <div className="flex justify-center">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
         ) : project ? (
-          <Card className="w-full max-w-4xl mx-auto">
-            <CardHeader>
-              <CardTitle className="text-2xl">{project.name}</CardTitle>
-              <CardDescription>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.3 }}
+            className="space-y-6"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2, ease: "easeOut" }}
+            >
+              <h1 className="text-3xl font-bold">{project.name}</h1>
+              <p className="text-muted-foreground">
                 Created: {new Date(project.createdAt).toLocaleDateString()}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {errorMessage && (
+              </p>
+            </motion.div>
+
+            {errorMessage && (
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3, delay: 0.2, ease: "easeOut" }}
+              >
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>{errorMessage}</AlertDescription>
                 </Alert>
-              )}
-              <div>
-                <h3 className="text-lg font-semibold">Description</h3>
-                <p className="text-muted-foreground">
-                  {project.description || "No description provided."}
-                </p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div>
-                  <p className="text-sm font-semibold">Vibe</p>
-                  <p className="text-sm text-muted-foreground">
-                    {project.vibe ? project.vibe : "Not specified"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">Strict mode</p>
-                  <p className="text-sm text-muted-foreground">
-                    {project.strict ? "Enabled" : "Disabled"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">Target timeframe</p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatTimeframe(project.timeframe)}
-                  </p>
-                </div>
-              </div>
-              <Separator />
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-semibold">Audio Files</h3>
+              </motion.div>
+            )}
+
+            <div className="mx-auto">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.3, ease: "easeOut" }}
+              >
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle>Project Details</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Dialog open={isEditModalOpen} onOpenChange={(open) => {
+                        setIsEditModalOpen(open);
+                        if (!open) {
+                          setEditField(null);
+                        }
+                      }}>
+                        <DialogTrigger asChild>
+                          <Button variant="ghost" size="sm">
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </DialogTrigger>
+                      <DialogContent>
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.2, ease: "easeOut" }}
+                        >
+                        <DialogHeader className="mb-6">
+                          <DialogTitle>Edit Project</DialogTitle>
+                          <DialogDescription>
+                            Update the details for your project.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={handleUpdateProject} className="space-y-4">
+                          <div>
+                            <Label htmlFor="edit-name" className="mb-2">
+                              Project Name
+                            </Label>
+                            <Input
+                              id="edit-name"
+                              value={editName}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditName(e.target.value)}
+                              required
+                              placeholder="Enter project name"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-desc" className="mb-2 flex items-center gap-2">
+                              Description (optional)
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-foreground transition"
+                                    aria-label="How the description is used"
+                                  >
+                                    <Info className="h-4 w-4" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Shared with the AI to steer the narration script directly.
+                                </TooltipContent>
+                              </Tooltip>
+                            </Label>
+                            <Input
+                              id="edit-desc"
+                              value={editDescription}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditDescription(e.target.value)}
+                              placeholder="Enter project description"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Keep sensitive information out—everything here informs the AI voiceover.
+                            </p>
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-vibe" className="mb-2 flex items-center gap-2">
+                              Vibe (optional)
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-foreground transition"
+                                    aria-label="What vibe means"
+                                  >
+                                    <Info className="h-4 w-4" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Set the style—playful, cinematic, neutral, etc.
+                                </TooltipContent>
+                              </Tooltip>
+                            </Label>
+                            <Input
+                              id="edit-vibe"
+                              value={editVibe}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditVibe(e.target.value)}
+                              placeholder="Playful, authoritative, warm..."
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <input
+                                id="edit-strict"
+                                type="checkbox"
+                                className="h-4 w-4 rounded border border-input"
+                                checked={editStrictMode}
+                                onChange={(e) => setEditStrictMode(e.target.checked)}
+                              />
+                              <Label htmlFor="edit-strict" className="flex items-center gap-2">
+                                Strict mode
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="text-muted-foreground hover:text-foreground transition"
+                                      aria-label="Strict mode details"
+                                    >
+                                      <Info className="h-4 w-4" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Enable when the voice must follow instructions precisely.
+                                  </TooltipContent>
+                                </Tooltip>
+                              </Label>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Turn off for looser, more expressive narrations.
+                            </p>
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-timeframe" className="mb-2 flex items-center gap-2">
+                              Target timeframe (seconds)
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-foreground transition"
+                                    aria-label="Timeframe details"
+                                  >
+                                    <Info className="h-4 w-4" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  The AI aims for this duration; use 0 if duration is flexible.
+                                </TooltipContent>
+                              </Tooltip>
+                            </Label>
+                            <Input
+                              id="edit-timeframe"
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={editTimeframe}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditTimeframe(e.target.value)}
+                              placeholder="60"
+                            />
+                          </div>
+                          <Button type="submit" disabled={isUpdating} className="w-full">
+                            {isUpdating ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Updating...
+                              </>
+                            ) : (
+                              "Update Project"
+                            )}
+                          </Button>
+                        </form>
+                        </motion.div>
+                      </DialogContent>
+                      </Dialog>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsDeleteConfirmOpen(true)}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-600" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3">Description</h3>
+                      <p 
+                        className="text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+                        onClick={() => {
+                          setEditField('description');
+                          setIsEditModalOpen(true);
+                        }}
+                      >
+                        {project.description || "No description provided."}
+                      </p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3">Project Settings</h3>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {project.vibe && (
+                          <span 
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800 border border-purple-200 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => {
+                              setEditField('vibe');
+                              setIsEditModalOpen(true);
+                            }}
+                          >
+                            <span className="w-1.5 h-1.5 bg-purple-500 rounded-full mr-1.5"></span>
+                            {project.vibe}
+                          </span>
+                        )}
+                        <span 
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer hover:shadow-md transition-shadow ${
+                            project.strict
+                              ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-800 border-green-200'
+                              : 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border-gray-200'
+                          }`}
+                          onClick={() => {
+                            setEditField('strict');
+                            setIsEditModalOpen(true);
+                          }}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                            project.strict ? 'bg-green-500' : 'bg-gray-400'
+                          }`}></span>
+                          {project.strict ? 'Strict' : 'Flexible'}
+                        </span>
+                        {project.timeframe > 0 && (
+                          <span 
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 border border-blue-200 cursor-pointer hover:shadow-md transition-shadow"
+                            onClick={() => {
+                              setEditField('timeframe');
+                              setIsEditModalOpen(true);
+                            }}
+                          >
+                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5"></span>
+                            {Math.round(project.timeframe / 1000)}s
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.5, ease: "easeOut" }}
+            >
+              <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Takes</CardTitle>
                   <Dialog open={isUploadModalOpen} onOpenChange={(open: boolean) => {
                     setIsUploadModalOpen(open);
                     if (open) {
@@ -384,12 +647,23 @@ export default function ProjectPage() {
                     }
                   }}>
                     <DialogTrigger asChild>
-                      <Button>
-                        <Upload className="h-4 w-4 mr-2" />
-                        Upload Audio
-                      </Button>
+                      <motion.div
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        <Button>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Start a new take
+                        </Button>
+                      </motion.div>
                     </DialogTrigger>
                       <DialogContent>
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.2, ease: "easeOut" }}
+                        >
                         <DialogHeader>
                           <DialogTitle>Upload Speech Audio</DialogTitle>
                           <DialogDescription>
@@ -405,11 +679,8 @@ export default function ProjectPage() {
                             </Alert>
                           </div>
                         )}
-                        <div className="space-y-4">
+                        <div className="space-y-4 pt-4">
                         <div>
-                          <Label htmlFor="audio-file" className="mb-2">
-                            Select Audio File
-                          </Label>
                           <Input
                             id="audio-file"
                             type="file"
@@ -441,224 +712,106 @@ export default function ProjectPage() {
                           )}
                         </Button>
                       </div>
+                    </motion.div>
                     </DialogContent>
                   </Dialog>
                 </div>
+              </CardHeader>
+              <CardContent>
                 {isLoadingUploads ? (
-                  <div className="flex justify-center">
+                  <div className="flex justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin" />
                   </div>
                 ) : audioUploads.length === 0 ? (
-                  <p className="text-center text-muted-foreground pb-6">
+                  <motion.p
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3, delay: 0.4 }}
+                    className="text-center text-muted-foreground py-8"
+                  >
                     No audio files yet. Upload your first audio file!
-                  </p>
+                  </motion.p>
                 ) : (
-                  <div className="space-y-2">
+                  <motion.div
+                    className="space-y-3"
+                    initial="hidden"
+                    animate="visible"
+                    variants={{
+                      hidden: { opacity: 0 },
+                      visible: {
+                        opacity: 1,
+                        transition: {
+                          staggerChildren: 0.1
+                        }
+                      }
+                    }}
+                  >
                     {audioUploads.map((upload) => (
-                      <Card key={upload.id}>
-                        <CardContent className="p-4">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <h4 className="font-semibold">{upload.fileName}</h4>
-                              <p className="text-xs text-muted-foreground mt-2">
-                                Uploaded: {new Date(upload.createdAt).toLocaleDateString()}
-                              </p>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Link href={`/dashboard/project/${projectId}/analyze/${upload.id}`}>
-                                <Button
-                                  variant="default"
-                                  size="sm"
+                      <motion.div
+                        key={upload.id}
+                        variants={{
+                          hidden: { opacity: 0, y: 20 },
+                          visible: {
+                            opacity: 1,
+                            y: 0,
+                            transition: {
+                              duration: 0.3,
+                              ease: "easeOut"
+                            }
+                          }
+                        }}
+                      >
+                        <Card>
+                          <CardContent>
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <h4 className="font-semibold">{upload.fileName}</h4>
+                                <p className="text-xs text-muted-foreground mt-2">
+                                  Uploaded: {new Date(upload.createdAt).toLocaleDateString()}
+                                </p>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Link href={`/dashboard/project/${projectId}/analyze/${upload.id}`}>
+                                  <motion.div
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                  >
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                    >
+                                      <BarChart3 className="h-4 w-4 mr-2" />
+                                      Analyze
+                                    </Button>
+                                  </motion.div>
+                                </Link>
+                                <motion.div
+                                  whileHover={{ scale: 1.05 }}
+                                  whileTap={{ scale: 0.95 }}
                                 >
-                                  <BarChart3 className="h-4 w-4 mr-2" />
-                                  Analyze
-                                </Button>
-                              </Link>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedUploadToDelete(upload);
-                                  setIsDeleteUploadDialogOpen(true);
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedUploadToDelete(upload);
+                                      setIsDeleteUploadDialogOpen(true);
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </motion.div>
+                              </div>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+                          </CardContent>
+                        </Card>
+                      </motion.div>
                     ))}
-                  </div>
+                  </motion.div>
                 )}
-              </div>
-              <Separator />
-              <div className="flex space-x-2">
-                <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline">
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit Project
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Edit Project</DialogTitle>
-                      <DialogDescription>
-                        Update the details for your project.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleUpdateProject} className="space-y-4">
-                      <div>
-                        <Label htmlFor="edit-name" className="mb-2">
-                          Project Name
-                        </Label>
-                        <Input
-                          id="edit-name"
-                          value={editName}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditName(e.target.value)}
-                          required
-                          placeholder="Enter project name"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="edit-desc" className="mb-2 flex items-center gap-2">
-                          Description (optional)
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="text-muted-foreground hover:text-foreground transition"
-                                aria-label="How the description is used"
-                              >
-                                <Info className="h-4 w-4" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              Shared with the AI to steer the narration script directly.
-                            </TooltipContent>
-                          </Tooltip>
-                        </Label>
-                        <Input
-                          id="edit-desc"
-                          value={editDescription}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditDescription(e.target.value)}
-                          placeholder="Enter project description"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Keep sensitive information out—everything here informs the AI voiceover.
-                        </p>
-                      </div>
-                      <div>
-                        <Label htmlFor="edit-vibe" className="mb-2 flex items-center gap-2">
-                          Vibe (optional)
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="text-muted-foreground hover:text-foreground transition"
-                                aria-label="What vibe means"
-                              >
-                                <Info className="h-4 w-4" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              Set the style—playful, cinematic, neutral, etc.
-                            </TooltipContent>
-                          </Tooltip>
-                        </Label>
-                        <Input
-                          id="edit-vibe"
-                          value={editVibe}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditVibe(e.target.value)}
-                          placeholder="Playful, authoritative, warm..."
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <input
-                            id="edit-strict"
-                            type="checkbox"
-                            className="h-4 w-4 rounded border border-input"
-                            checked={editStrictMode}
-                            onChange={(e) => setEditStrictMode(e.target.checked)}
-                          />
-                          <Label htmlFor="edit-strict" className="flex items-center gap-2">
-                            Strict mode
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="text-muted-foreground hover:text-foreground transition"
-                                  aria-label="Strict mode details"
-                                >
-                                  <Info className="h-4 w-4" />
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                Enable when the voice must follow instructions precisely.
-                              </TooltipContent>
-                            </Tooltip>
-                          </Label>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Turn off for looser, more expressive narrations.
-                        </p>
-                      </div>
-                      <div>
-                        <Label htmlFor="edit-timeframe" className="mb-2 flex items-center gap-2">
-                          Target timeframe (seconds)
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="text-muted-foreground hover:text-foreground transition"
-                                aria-label="Timeframe details"
-                              >
-                                <Info className="h-4 w-4" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              The AI aims for this duration; use 0 if duration is flexible.
-                            </TooltipContent>
-                          </Tooltip>
-                        </Label>
-                        <Input
-                          id="edit-timeframe"
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={editTimeframe}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditTimeframe(e.target.value)}
-                          placeholder="60"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          45 ≈ 45 seconds. Perfect for aligning to video edits.
-                        </p>
-                      </div>
-                      <Button type="submit" disabled={isUpdating} className="w-full">
-                        {isUpdating ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            Updating...
-                          </>
-                        ) : (
-                          "Update Project"
-                        )}
-                      </Button>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsDeleteConfirmOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Project
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+            </motion.div>
+          </motion.div>
         ) : (
           <Card className="w-full max-w-4xl mx-auto">
             <CardContent className="p-4">
@@ -675,12 +828,22 @@ export default function ProjectPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={confirmDeleteProject}>
-                Delete
-              </Button>
+              <motion.div
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Button variant="outline" onClick={() => setIsDeleteConfirmOpen(false)}>
+                  Cancel
+                </Button>
+              </motion.div>
+              <motion.div
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Button variant="destructive" onClick={confirmDeleteProject}>
+                  Delete
+                </Button>
+              </motion.div>
             </div>
           </DialogContent>
         </Dialog>
@@ -693,23 +856,33 @@ export default function ProjectPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => { setIsDeleteUploadDialogOpen(false); setSelectedUploadToDelete(null); }} disabled={isDeletingUpload}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={confirmDeleteUpload} disabled={isDeletingUpload}>
-                {isDeletingUpload ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Deleting...
-                  </>
-                ) : (
-                  "Delete"
-                )}
-              </Button>
+              <motion.div
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Button variant="outline" onClick={() => { setIsDeleteUploadDialogOpen(false); setSelectedUploadToDelete(null); }} disabled={isDeletingUpload}>
+                  Cancel
+                </Button>
+              </motion.div>
+              <motion.div
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Button variant="destructive" onClick={confirmDeleteUpload} disabled={isDeletingUpload}>
+                  {isDeletingUpload ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Deleting...
+                    </>
+                  ) : (
+                    "Delete"
+                  )}
+                </Button>
+              </motion.div>
             </div>
           </DialogContent>
         </Dialog>
-      </div>
-    </div>
+      </motion.div>
+    </>
   );
 }

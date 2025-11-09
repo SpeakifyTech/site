@@ -25,7 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Plus, Edit, Trash2, Info } from "lucide-react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 
 interface Project {
   id: string;
@@ -38,7 +38,6 @@ interface Project {
 }
 
 export default function Dashboard() {
-  const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
@@ -228,9 +227,11 @@ export default function Dashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={() => router.push("/")} className="w-full">
-              Go to Login
-            </Button>
+            <Link href="/">
+              <Button className="w-full">
+                Go to Login
+              </Button>
+            </Link>
           </CardContent>
         </Card>
       </div>
@@ -239,18 +240,38 @@ export default function Dashboard() {
 
   return (
     <>
-      <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+      <motion.header
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12"
+      >
         <div className="flex items-center gap-2 px-4">
           <h1 className="text-lg font-semibold">Dashboard</h1>
         </div>
-      </header>
-      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-        <div className="text-center py-8">
-          <h1 className="text-3xl font-bold mb-2">Welcome back, {session.user.name.split(" ")[0]}!</h1>
+      </motion.header>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
+        className="flex flex-1 flex-col gap-4 p-4 pt-0"
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2, ease: "easeOut" }}
+          className="text-center py-8"
+        >
+          <h1 className="text-3xl font-bold mb-2">Hello, {session.user.name.split(" ")[0]}!</h1>
           <p className="text-muted-foreground">Open a project to begin.</p>
-        </div>
+        </motion.div>
 
-        <Card className="w-full max-w-4xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3, ease: "easeOut" }}
+        >
+          <Card className="w-full max-w-4xl mx-auto">
           <CardHeader>
             <div className="flex justify-between items-center mt-2">
               <div className="space-y-2">
@@ -259,12 +280,23 @@ export default function Dashboard() {
               </div>
               <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
                 <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Project
-                  </Button>
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create Project
+                    </Button>
+                  </motion.div>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent asChild>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                  >
                   <DialogHeader>
                     <DialogTitle>Create New Project</DialogTitle>
                     <DialogDescription>
@@ -424,6 +456,7 @@ export default function Dashboard() {
                       </p>
                     )}
                   </form>
+                  </motion.div>
                 </DialogContent>
               </Dialog>
             </div>
@@ -434,13 +467,45 @@ export default function Dashboard() {
                 <Loader2 className="h-6 w-6 animate-spin" />
               </div>
             ) : projects.length === 0 ? (
-              <p className="text-center text-muted-foreground">
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3, delay: 0.4 }}
+                className="text-center text-muted-foreground"
+              >
                 No projects yet. Create your first project!
-              </p>
+              </motion.p>
             ) : (
-              <div className="space-y-3">
+              <motion.div
+                initial="hidden"
+                animate="visible"
+                variants={{
+                  hidden: { opacity: 0 },
+                  visible: {
+                    opacity: 1,
+                    transition: {
+                      staggerChildren: 0.1
+                    }
+                  }
+                }}
+                className="space-y-3"
+              >
                 {projects.map((project) => (
-                  <Link key={project.id} href={`/dashboard/project/${project.id}`}>
+                  <motion.div
+                    key={project.id}
+                    variants={{
+                      hidden: { opacity: 0, y: 20 },
+                      visible: {
+                        opacity: 1,
+                        y: 0,
+                        transition: {
+                          duration: 0.3,
+                          ease: "easeOut"
+                        }
+                      }
+                    }}
+                  >
+                  <Link href={`/dashboard/project/${project.id}`}>
                     <Card className="cursor-pointer hover:shadow-md hover:border-primary/20 transition-all duration-200 group">
                       <CardContent>
                         <div className="flex justify-between items-start gap-4">
@@ -450,28 +515,38 @@ export default function Dashboard() {
                                 {project.name}
                               </h4>
                               <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.preventDefault()}>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    handleEditProject(project);
-                                  }}
+                                <motion.div
+                                  whileHover={{ scale: 1.1 }}
+                                  whileTap={{ scale: 0.9 }}
                                 >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    handleDeleteProject(project.id);
-                                  }}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      handleEditProject(project);
+                                    }}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </motion.div>
+                                <motion.div
+                                  whileHover={{ scale: 1.1 }}
+                                  whileTap={{ scale: 0.9 }}
                                 >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      handleDeleteProject(project.id);
+                                    }}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </motion.div>
                               </div>
                             </div>
                             {project.description && (
@@ -517,11 +592,18 @@ export default function Dashboard() {
                       </CardContent>
                     </Card>
                   </Link>
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             )}
             <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-              <DialogContent>
+              <DialogContent asChild>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                >
                 <DialogHeader>
                   <DialogTitle>Edit Project</DialogTitle>
                   <DialogDescription>
@@ -669,13 +751,20 @@ export default function Dashboard() {
                     )}
                   </Button>
                 </form>
+                </motion.div>
               </DialogContent>
             </Dialog>
             <Dialog
               open={isDeleteConfirmOpen}
               onOpenChange={setIsDeleteConfirmOpen}
             >
-              <DialogContent>
+              <DialogContent asChild>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                >
                 <DialogHeader>
                   <DialogTitle>Delete Project</DialogTitle>
                   <DialogDescription>
@@ -697,11 +786,13 @@ export default function Dashboard() {
                     Delete
                   </Button>
                 </div>
+                </motion.div>
               </DialogContent>
             </Dialog>
           </CardContent>
         </Card>
-      </div>
+        </motion.div>
+      </motion.div>
     </>
   );
 }

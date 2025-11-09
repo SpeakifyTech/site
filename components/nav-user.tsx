@@ -6,6 +6,7 @@ import {
 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
+import { ModeToggle } from "@/components/theme-toggle"
 import {
   Avatar,
   AvatarFallback,
@@ -125,6 +126,10 @@ export function NavUser({
                 Notifications
               </DropdownMenuItem>
             </DropdownMenuGroup> */}
+            <DropdownMenuSeparator />
+            <div className="p-2">
+              <ModeToggle />
+            </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut />
