@@ -150,7 +150,7 @@ export default function Dashboard() {
     setEditDescription(project.description || "");
     setEditVibe(project.vibe || "");
     setEditStrictMode(project.strict ?? false);
-    setEditTimeframe(project.timeframe ? String(project.timeframe) : "");
+    setEditTimeframe(project.timeframe ? String(Math.round(project.timeframe / 1000)) : "");
     setErrorMessage("");
     setIsEditModalOpen(true);
   };
@@ -258,32 +258,22 @@ export default function Dashboard() {
     <>
       <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
         <div className="flex items-center gap-2 px-4">
-          <Separator orientation="vertical" className="mr-2 h-4" />
           <h1 className="text-lg font-semibold">Dashboard</h1>
         </div>
       </header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <div className="text-center py-8">
+          <h1 className="text-3xl font-bold mb-2">Welcome back, {session.user.name.split(" ")[0]}!</h1>
+          <p className="text-muted-foreground">Open a project to begin.</p>
+        </div>
+
         <Card className="w-full max-w-4xl mx-auto">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Dashboard</CardTitle>
-            <CardDescription>Welcome back!</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="font-medium">Name: {session.user.name}</p>
-              <p className="text-sm text-muted-foreground">
-                Email: {session.user.email}
-              </p>
-            </div>
-            <Separator />
-            {errorMessage && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>{errorMessage}</AlertDescription>
-              </Alert>
-            )}
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Your Projects</h3>
+          <CardHeader>
+            <div className="flex justify-between items-center mt-2">
+              <div className="space-y-2">
+                <CardTitle>Your Projects</CardTitle>
+                <CardDescription>Manage your speaking practice</CardDescription>
+              </div>
               <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
                 <DialogTrigger asChild>
                   <Button>
@@ -454,6 +444,8 @@ export default function Dashboard() {
                 </DialogContent>
               </Dialog>
             </div>
+          </CardHeader>
+          <CardContent>
             {isLoadingProjects ? (
               <div className="flex justify-center">
                 <Loader2 className="h-6 w-6 animate-spin" />
@@ -463,60 +455,80 @@ export default function Dashboard() {
                 No projects yet. Create your first project!
               </p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {projects.map((project) => (
                   <Link key={project.id} href={`/dashboard/project/${project.id}`}>
-                    <Card className="cursor-pointer hover:bg-muted/50 transition-colors">
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <h4 className="font-semibold">{project.name}</h4>
+                    <Card className="cursor-pointer hover:shadow-md hover:border-primary/20 transition-all duration-200 group">
+                      <CardContent>
+                        <div className="flex justify-between items-start gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between mb-2">
+                              <h4 className="font-semibold text-lg group-hover:text-primary transition-colors truncate">
+                                {project.name}
+                              </h4>
+                              <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.preventDefault()}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handleEditProject(project);
+                                  }}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handleDeleteProject(project.id);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
                             {project.description && (
-                              <p className="text-sm text-muted-foreground">
+                              <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
                                 {project.description}
                               </p>
                             )}
-                            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mt-2">
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
                               {project.vibe && (
-                                <span className="rounded-full border px-2 py-0.5">
-                                  Vibe: {project.vibe}
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800 border border-purple-200">
+                                  <span className="w-1.5 h-1.5 bg-purple-500 rounded-full mr-1.5"></span>
+                                  {project.vibe}
                                 </span>
                               )}
-                              <span className="rounded-full border px-2 py-0.5">
-                                Strict: {project.strict ? "On" : "Off"}
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                                project.strict
+                                  ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-800 border-green-200'
+                                  : 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 border-gray-200'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                                  project.strict ? 'bg-green-500' : 'bg-gray-400'
+                                }`}></span>
+                                {project.strict ? 'Strict' : 'Flexible'}
                               </span>
                               {project.timeframe > 0 && (
-                                <span className="rounded-full border px-2 py-0.5">
-                                  Target: {Math.round(project.timeframe / 1000)}s
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800 border border-blue-200">
+                                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5"></span>
+                                  {Math.round(project.timeframe / 1000)}s
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Created:{" "}
-                              {new Date(project.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <div className="flex space-x-2" onClick={(e) => e.preventDefault()}>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                handleEditProject(project);
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                handleDeleteProject(project.id);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span className="flex items-center">
+                                <span className="w-1.5 h-1.5 bg-muted-foreground/30 rounded-full mr-2"></span>
+                                Created {new Date(project.createdAt).toLocaleDateString()}
+                              </span>
+                              <span className="text-xs opacity-60 group-hover:opacity-100 transition-opacity">
+                                Click to open →
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </CardContent>
@@ -603,7 +615,7 @@ export default function Dashboard() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 py-1">
                     <div className="flex items-center gap-2">
                       <Checkbox
                         id="edit-strict-mode"
@@ -704,13 +716,6 @@ export default function Dashboard() {
                 </div>
               </DialogContent>
             </Dialog>
-            <Button
-              onClick={handleSignOut}
-              variant="destructive"
-              className="w-full"
-            >
-              Sign Out
-            </Button>
           </CardContent>
         </Card>
       </div>

@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Loader2, Edit, Trash2, AlertTriangle, Upload, Info } from "lucide-react";
+import { Loader2, Edit, Trash2, AlertTriangle, Upload, Info, BarChart3 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -375,7 +375,7 @@ export default function ProjectPage() {
               <div>
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold">Audio Files</h3>
-                  <Dialog open={isUploadModalOpen} onOpenChange={(open) => {
+                  <Dialog open={isUploadModalOpen} onOpenChange={(open: boolean) => {
                     setIsUploadModalOpen(open);
                     if (open) {
                       // clear previous errors and selected file when opening modal
@@ -465,9 +465,15 @@ export default function ProjectPage() {
                               </p>
                             </div>
                             <div className="flex items-center space-x-2">
-                              <Dialog open={false} onOpenChange={() => {}}>
-                                {/* placeholder in case we want preview/modal later */}
-                              </Dialog>
+                              <Link href={`/dashboard/project/${projectId}/analyze/${upload.id}`}>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                >
+                                  <BarChart3 className="h-4 w-4 mr-2" />
+                                  Analyze
+                                </Button>
+                              </Link>
                               <Button
                                 variant="outline"
                                 size="sm"

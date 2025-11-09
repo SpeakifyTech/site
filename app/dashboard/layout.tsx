@@ -45,7 +45,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <SidebarProvider>
-      <AppSidebar user={session.user} />
+      <AppSidebar user={{
+        name: session.user.name,
+        email: session.user.email,
+        avatar: session.user.image || undefined
+      }} />
       <SidebarInset>
         {children}
       </SidebarInset>

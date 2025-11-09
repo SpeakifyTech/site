@@ -31,7 +31,7 @@ interface Project {
   createdAt: string;
 }
 
-export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sidebar> & { user?: { name: string; email: string; avatar?: string } }) {
+export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sidebar> & { user?: { name: string; email: string; avatar: string | undefined } }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const { data: session } = authClient.useSession();
 
@@ -59,11 +59,7 @@ export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sideb
   }, []);
 
   const data = {
-    user: user ? { ...user, avatar: user.avatar || "/avatars/shadcn.jpg" } : {
-      name: "Mehul Jasti",
-      email: "mehul@example.com",
-      avatar: "/avatars/shadcn.jpg",
-    },
+    user: user,
     teams: [
       {
         name: "Speakify",
@@ -98,7 +94,7 @@ export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sideb
         <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        {user && <NavUser user={user} />}
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

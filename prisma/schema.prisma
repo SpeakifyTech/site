@@ -85,10 +85,32 @@ model AudioUpload {
   fileName  String
   fileData  String
   fileHash  String
+  analysis  AudioAnalysis?
   createdAt DateTime @default(now())
 
   @@unique([userId, fileHash])
   @@map("audioUpload")
+}
+
+model AudioAnalysis {
+  id        String   @id @default(cuid()) @map("_id")
+  uploadId  String   @unique
+  upload    AudioUpload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  transcript String
+  durationSeconds Float
+  wordCount Int
+  wpm Float
+  fillerWords Json
+  totalFillerWords Int
+  gaps Json
+  averageGapDuration Float
+  speechSegments Json
+  sentenceIssues Json
+  overallCoherenceScore Float
+  suggestions Json
+  createdAt DateTime @default(now())
+
+  @@map("audioAnalysis")
 }
 
 model Project {
