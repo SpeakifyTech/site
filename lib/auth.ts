@@ -12,15 +12,9 @@ export const auth = betterAuth({
     provider: "mongodb",
   }),
   // ONLY WHILE USING LIVE SHARE
-  advanced: {
-    cookies: {
-      state: {
-        attributes: {
-          sameSite: "none",
-          secure: true,
-        }
-      }
-    }
+  cookie: {
+    sameSite: "none",
+    secure: process.env.NODE_ENV !== "development",
   },
   emailAndPassword: {
     enabled: true,
