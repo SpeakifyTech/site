@@ -106,6 +106,7 @@ model AudioAnalysis {
   averageGapDuration Float
   speechSegments Json
   sentenceIssues Json
+  timestampedTranscript Json?
   overallCoherenceScore Float
   suggestions Json
   createdAt DateTime @default(now())

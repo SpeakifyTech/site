@@ -9,6 +9,16 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
+// Define Project type
+interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  vibe: string | null;
+  strict: boolean;
+  timeframe: number;
+}
+
 // Define the structured output schema using Zod
 const FillerWordSchema = z.object({
   word: z.string().describe("The filler word detected (e.g., 'um', 'uh', 'like')"),
@@ -29,15 +39,29 @@ const SpeechSegmentSchema = z.object({
   coherenceScore: z.number().min(0).max(10).describe("Coherence score from 0-10"),
 });
 
-const SentenceIssueSchema = z.object({
-  timestamp: z.string().describe("Timestamp in format MM:SS"),
-  issue: z.string().describe("Description of the sentence structure issue"),
+const CoherenceIssueSchema = z.object({
+  startTime: z.string().describe("Start timestamp in format MM:SS for the coherence issue segment"),
+  endTime: z.string().describe("End timestamp in format MM:SS for the coherence issue segment"),
+  issue: z.string().describe("Description of the coherence issue (e.g., 'Rambling', 'Run-on sentence')"),
   suggestion: z.string().describe("Suggestion for improvement"),
   severity: z.enum(["low", "medium", "high"]).describe("Severity of the issue"),
 });
 
 const AudioAnalysisSchema = z.object({
   transcript: z.string().describe("Complete transcript of the audio"),
+  timestampedTranscript: z.array(z.object({
+    startTime: z.string().describe("Start timestamp in MM:SS for this utterance"),
+    endTime: z.string().describe("End timestamp in MM:SS for this utterance"),
+    text: z.string().describe("The transcribed text for this timestamp range (must be exactly one full sentence)"),
+  }).refine((obj) => {
+    const text = (obj.text || "").trim();
+    if (!text) return false;
+    // Heuristic: require exactly one sentence-terminating punctuation (., !, or ?) followed by space or end
+    const matches = text.match(/[.!?](\s|$)/g);
+    return !!matches && matches.length === 1;
+  }, {
+    message: "Each timestampedTranscript entry must contain exactly one complete sentence ending with '.', '!' or '?'.",
+  })).optional().describe("Optional array of transcript segments with timestamps (MM:SS); each item must be exactly one sentence") ,
   durationSeconds: z.number().describe("Total duration of the audio in seconds"),
   wordCount: z.number().describe("Total number of words in the transcript"),
   wpm: z.number().describe("Words per minute (calculated as wordCount / (durationSeconds / 60))"),
@@ -46,10 +70,73 @@ const AudioAnalysisSchema = z.object({
   gaps: z.array(GapAnalysisSchema).describe("Array of detected pauses/gaps with analysis"),
   averageGapDuration: z.number().describe("Average duration of gaps in seconds"),
   speechSegments: z.array(SpeechSegmentSchema).describe("Breakdown of speech into segments"),
-  sentenceIssues: z.array(SentenceIssueSchema).describe("Identified sentence structure issues"),
+  coherenceIssues: z.array(CoherenceIssueSchema).describe("Identified coherence issues like rambling or run-on sentences"),
   overallCoherenceScore: z.number().min(0).max(10).describe("Overall speech coherence score from 0-10"),
   suggestions: z.array(z.string()).describe("General suggestions for improving the speech"),
 });
+
+// Server-side performance calculation functions
+function calculateOverallGrade(analysis: any, project: Project): number {
+  if (!analysis || !project) return 0;
+
+  // Time accuracy score (0-100)
+  let timeScore = 100;
+  if (project.timeframe > 0) {
+    const timeDiff = Math.abs(analysis.durationSeconds - project.timeframe);
+    const maxDiff = project.timeframe * 0.2; // 20% tolerance
+    timeScore = Math.max(0, 100 - (timeDiff / maxDiff) * 100);
+  }
+
+  // Coherence score (0-100) - using as proxy for tone
+  const coherenceScore = (analysis.overallCoherenceScore / 10) * 100;
+
+  // Filler words score (0-100) - lower filler % is better
+  const fillerPercentage =
+    (analysis.totalFillerWords / analysis.wordCount) * 100;
+  const fillerScore = Math.max(0, 100 - fillerPercentage * 5); // 5% filler = 75% score, etc.
+
+  // Long pauses score (0-100) - fewer long pauses is better
+  const longPauses = analysis.gaps.filter(
+    (g: any) => g.type === "long" || g.type === "excessive"
+  ).length;
+  const pauseScore = Math.max(0, 100 - longPauses * 10); // 10 long pauses = 0% score
+
+  // Average the scores
+  const totalScore =
+    (timeScore + coherenceScore + fillerScore + pauseScore) / 4;
+  return Math.round(totalScore);
+}
+
+function calculateFactorScores(analysis: any, project: Project) {
+  // Time accuracy score (0-100)
+  let timeScore = 100;
+  if (project.timeframe > 0) {
+    const timeDiff = Math.abs(analysis.durationSeconds - project.timeframe);
+    const maxDiff = project.timeframe * 0.2; // 20% tolerance
+    timeScore = Math.max(0, 100 - (timeDiff / maxDiff) * 100);
+  }
+
+  // Coherence score (0-100) - using as proxy for tone
+  const coherenceScore = (analysis.overallCoherenceScore / 10) * 100;
+
+  // Filler words score (0-100) - lower filler % is better
+  const fillerPercentage =
+    (analysis.totalFillerWords / analysis.wordCount) * 100;
+  const fillerScore = Math.max(0, 100 - fillerPercentage * 5); // 5% filler = 75% score, etc.
+
+  // Long pauses score (0-100) - fewer long pauses is better
+  const longPauses = analysis.gaps.filter(
+    (g: any) => g.type === "long" || g.type === "excessive"
+  ).length;
+  const pauseScore = Math.max(0, 100 - longPauses * 10); // 10 long pauses = 0% score
+
+  return {
+    time: Math.round(timeScore),
+    coherence: Math.round(coherenceScore),
+    filler: Math.round(fillerScore),
+    pauses: Math.round(pauseScore),
+  };
+}
 
 export async function GET(
   request: NextRequest,
@@ -75,8 +162,19 @@ export async function GET(
       return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
     }
 
-    // Verify the upload exists and belongs to the user and project
-    console.log("Checking upload in database...");
+    // Fetch project and verify the upload exists
+    console.log("Checking project and upload in database...");
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        userId: session.user.id,
+      },
+    });
+    
+    if (!project) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
     const upload = await prisma.audioUpload.findFirst({
       where: {
         id: id,
@@ -87,7 +185,12 @@ export async function GET(
         analysis: true,
       },
     });
-    console.log("Upload found:", { exists: !!upload, fileName: upload?.fileName, hasAnalysis: !!upload?.analysis });
+    console.log("Project and upload found:", { 
+      projectName: project.name, 
+      uploadExists: !!upload, 
+      fileName: upload?.fileName, 
+      hasAnalysis: !!upload?.analysis 
+    });
 
     if (!upload) {
       return NextResponse.json({ error: "Upload not found" }, { status: 404 });
@@ -96,23 +199,38 @@ export async function GET(
     // Check if analysis already exists and this is not a retry
     if (upload.analysis && !isRetry) {
       console.log("Returning cached analysis");
+      
+      // Reconstruct analysis data for calculations
+      const cachedAnalysis = {
+        transcript: upload.analysis.transcript,
+        durationSeconds: upload.analysis.durationSeconds,
+        wordCount: upload.analysis.wordCount,
+        wpm: upload.analysis.wpm,
+        fillerWords: upload.analysis.fillerWords,
+        totalFillerWords: upload.analysis.totalFillerWords,
+        gaps: upload.analysis.gaps,
+        averageGapDuration: upload.analysis.averageGapDuration,
+        speechSegments: upload.analysis.speechSegments,
+        coherenceIssues: upload.analysis.sentenceIssues,
+        timestampedTranscript: upload.analysis.timestampedTranscript,
+        overallCoherenceScore: upload.analysis.overallCoherenceScore,
+        suggestions: upload.analysis.suggestions,
+      };
+
+      // Calculate server-side performance metrics
+      const overallGrade = calculateOverallGrade(cachedAnalysis, project);
+      const factorScores = calculateFactorScores(cachedAnalysis, project);
+
       return NextResponse.json({
         success: true,
         uploadId: upload.id,
         fileName: upload.fileName,
         analysis: {
-          transcript: upload.analysis.transcript,
-          durationSeconds: upload.analysis.durationSeconds,
-          wordCount: upload.analysis.wordCount,
-          wpm: upload.analysis.wpm,
-          fillerWords: upload.analysis.fillerWords,
-          totalFillerWords: upload.analysis.totalFillerWords,
-          gaps: upload.analysis.gaps,
-          averageGapDuration: upload.analysis.averageGapDuration,
-          speechSegments: upload.analysis.speechSegments,
-          sentenceIssues: upload.analysis.sentenceIssues,
-          overallCoherenceScore: upload.analysis.overallCoherenceScore,
-          suggestions: upload.analysis.suggestions,
+          ...cachedAnalysis,
+          performance: {
+            overallGrade,
+            factorScores,
+          },
         },
         cached: true,
       });
@@ -127,7 +245,8 @@ You are an expert speech analyst. Analyze this audio file comprehensively and pr
 
 Please analyze the following aspects:
 
-1. **Transcription**: Provide a complete, accurate transcript of the speech.
+1. **Transcription**: Provide a complete, accurate transcript of the speech. Use proper punctuation and paragraph breaks to reflect natural speech patterns. Ensure the transcript is easy to read and understand, and includes all spoken words (including filler words).
+  Additionally, produce a structured timestamped transcript as an array named 'timestampedTranscript'. IMPORTANT: each array entry MUST represent exactly one complete grammatical sentence (not multiple sentences, not fragments). Each entry should include 'startTime' and 'endTime' in MM:SS format and the 'text' for that single sentence. Make sure the sentence ends with proper sentence-ending punctuation (one of: '.', '!' or '?') and that the start/end times precisely cover that sentence.
 
 2. **Duration & Word Count**: Calculate the total duration in seconds and count all words.
 
@@ -135,8 +254,7 @@ Please analyze the following aspects:
 
 4. **Filler Words**: Identify ALL filler words like "um", "uh", "like", "you know", "so", "actually", "basically", "literally", etc. For each individual occurrence of a filler word, provide the word and its timestamp (MM:SS format). Create a new entry for every single filler word spoken.
 
-5. **Gap Analysis**: Identify pauses/gaps in speech. Ignore natural pauses under 1 second.
-   - Short gaps: 1-2 seconds (thoughtful pauses)
+5. **Gap Analysis**: Identify pauses/gaps in speech. Ignore natural pauses under 2 seconds.
    - Medium gaps: 2-4 seconds (hesitation)
    - Long gaps: 4-7 seconds (concerning pauses)
    - Excessive gaps: 7+ seconds (major disruption)
@@ -144,12 +262,13 @@ Please analyze the following aspects:
 
 6. **Speech Segmentation**: Break down the speech into logical segments (introduction, body, conclusion, transitions). Provide start/end timestamps and a brief content summary for each segment. Rate each segment's coherence (0-10).
 
-7. **Sentence Structure Issues**: Identify problems like:
-   - Passive voice usage
+7. **Clarity & Coherence Issues**: Identify problems like:
+   - Stuttering or stammering
+   - Mumbled or unclear speech
    - Run-on sentences
    - Incomplete sentences
    - Overly complex sentences
-   - Lack of variety
+   - Awkward phrasing
    Provide timestamp, issue description, suggestion, and severity.
 
 8. **Overall Coherence**: Rate the overall speech coherence and flow (0-10).
@@ -175,6 +294,18 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
       type: "object",
       properties: {
         transcript: { type: "string", description: "Complete transcript of the audio" },
+        timestampedTranscript: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              startTime: { type: "string", description: "Start timestamp in MM:SS" },
+              endTime: { type: "string", description: "End timestamp in MM:SS" },
+              text: { type: "string", description: "Transcribed text for this segment" },
+            },
+            required: ["startTime", "endTime", "text"],
+          },
+        },
         durationSeconds: { type: "number", description: "Total duration of the audio in seconds" },
         wordCount: { type: "number", description: "Total number of words in the transcript" },
         wpm: { type: "number", description: "Words per minute" },
@@ -217,35 +348,36 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
             required: ["type", "startTime", "endTime", "content", "coherenceScore"],
           },
         },
-        sentenceIssues: {
+        coherenceIssues: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              timestamp: { type: "string", description: "Timestamp in format MM:SS" },
-              issue: { type: "string", description: "Description of the issue" },
+              startTime: { type: "string", description: "Start timestamp in format MM:SS for the coherence issue segment" },
+              endTime: { type: "string", description: "End timestamp in format MM:SS for the coherence issue segment" },
+              issue: { type: "string", description: "Description of the coherence issue (e.g., 'Rambling', 'Run-on sentence')" },
               suggestion: { type: "string", description: "Suggestion for improvement" },
               severity: { type: "string", enum: ["low", "medium", "high"] },
             },
-            required: ["timestamp", "issue", "suggestion", "severity"],
+            required: ["startTime", "endTime", "issue", "suggestion", "severity"],
           },
         },
         overallCoherenceScore: { type: "number", minimum: 0, maximum: 10 },
         suggestions: { type: "array", items: { type: "string" } },
       },
       required: [
-        "transcript",
-        "durationSeconds",
-        "wordCount",
-        "wpm",
-        "fillerWords",
-        "totalFillerWords",
-        "gaps",
-        "averageGapDuration",
-        "speechSegments",
-        "sentenceIssues",
-        "overallCoherenceScore",
-        "suggestions",
+  "transcript",
+  "durationSeconds",
+  "wordCount",
+  "wpm",
+  "fillerWords",
+  "totalFillerWords",
+  "gaps",
+  "averageGapDuration",
+  "speechSegments",
+  "coherenceIssues",
+  "overallCoherenceScore",
+  "suggestions",
       ],
     };
 
@@ -275,56 +407,96 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
     const analysisData = AudioAnalysisSchema.parse(JSON.parse(responseText));
     console.log("Analysis parsed successfully");
 
+    // Server-side authoritative word count & WPM calculation
+    const countWords = (text: string) => {
+      if (!text) return 0;
+      // Basic word split: split on whitespace and punctuation, filter empties
+      return (text || "")
+        .trim()
+        .split(/\s+/)
+        .map((w) => w.replace(/^[^\w']+|[^\w']+$/g, ""))
+        .filter(Boolean).length;
+    };
+
+    // Prefer timestampedTranscript texts if available, fallback to full transcript
+    const reconstructedTranscript = (analysisData.timestampedTranscript && analysisData.timestampedTranscript.length > 0)
+      ? analysisData.timestampedTranscript.map((s) => s.text).join(" ")
+      : analysisData.transcript || "";
+
+    const serverWordCount = countWords(reconstructedTranscript);
+    const durationSec = analysisData.durationSeconds || 0;
+    const serverWpm = durationSec > 0 ? Math.round((serverWordCount / (durationSec / 60))) : 0;
+
+    // Overwrite values from AI with server-calculated authoritative values
+    analysisData.wordCount = serverWordCount;
+    analysisData.wpm = serverWpm;
+    console.log("Computed server-side wordCount and wpm:", { serverWordCount, serverWpm });
+    console.log("Analysis parsed successfully");
+
     // Save analysis to database
     console.log("Saving analysis to database...");
     if (upload.analysis && isRetry) {
       // Update existing analysis
+      const updateData = {
+        transcript: analysisData.transcript,
+        durationSeconds: analysisData.durationSeconds,
+        wordCount: analysisData.wordCount,
+        wpm: analysisData.wpm,
+        fillerWords: analysisData.fillerWords,
+        totalFillerWords: analysisData.totalFillerWords,
+        gaps: analysisData.gaps,
+        averageGapDuration: analysisData.averageGapDuration,
+        speechSegments: analysisData.speechSegments,
+        sentenceIssues: analysisData.coherenceIssues,
+        overallCoherenceScore: analysisData.overallCoherenceScore,
+        suggestions: analysisData.suggestions,
+        ...(analysisData.timestampedTranscript ? { timestampedTranscript: analysisData.timestampedTranscript } : {}),
+      };
+
       await prisma.audioAnalysis.update({
         where: { uploadId: upload.id },
-        data: {
-          transcript: analysisData.transcript,
-          durationSeconds: analysisData.durationSeconds,
-          wordCount: analysisData.wordCount,
-          wpm: analysisData.wpm,
-          fillerWords: analysisData.fillerWords,
-          totalFillerWords: analysisData.totalFillerWords,
-          gaps: analysisData.gaps,
-          averageGapDuration: analysisData.averageGapDuration,
-          speechSegments: analysisData.speechSegments,
-          sentenceIssues: analysisData.sentenceIssues,
-          overallCoherenceScore: analysisData.overallCoherenceScore,
-          suggestions: analysisData.suggestions,
-        },
+        data: updateData,
       });
       console.log("Analysis updated in database");
     } else {
       // Create new analysis
-      await prisma.audioAnalysis.create({
-        data: {
-          uploadId: upload.id,
-          transcript: analysisData.transcript,
-          durationSeconds: analysisData.durationSeconds,
-          wordCount: analysisData.wordCount,
-          wpm: analysisData.wpm,
-          fillerWords: analysisData.fillerWords,
-          totalFillerWords: analysisData.totalFillerWords,
-          gaps: analysisData.gaps,
-          averageGapDuration: analysisData.averageGapDuration,
-          speechSegments: analysisData.speechSegments,
-          sentenceIssues: analysisData.sentenceIssues,
-          overallCoherenceScore: analysisData.overallCoherenceScore,
-          suggestions: analysisData.suggestions,
-        },
-      });
+      const createData = {
+        uploadId: upload.id,
+        transcript: analysisData.transcript,
+        durationSeconds: analysisData.durationSeconds,
+        wordCount: analysisData.wordCount,
+        wpm: analysisData.wpm,
+        fillerWords: analysisData.fillerWords,
+        totalFillerWords: analysisData.totalFillerWords,
+        gaps: analysisData.gaps,
+        averageGapDuration: analysisData.averageGapDuration,
+        speechSegments: analysisData.speechSegments,
+        sentenceIssues: analysisData.coherenceIssues,
+        overallCoherenceScore: analysisData.overallCoherenceScore,
+        suggestions: analysisData.suggestions,
+        ...(analysisData.timestampedTranscript ? { timestampedTranscript: analysisData.timestampedTranscript } : {}),
+      };
+
+      await prisma.audioAnalysis.create({ data: createData });
       console.log("Analysis saved to database");
     }
 
-    // Return the structured analysis
+    // Calculate server-side performance metrics
+    const overallGrade = calculateOverallGrade(analysisData, project);
+    const factorScores = calculateFactorScores(analysisData, project);
+
+    // Return the structured analysis with calculated performance metrics
     return NextResponse.json({
       success: true,
       uploadId: upload.id,
       fileName: upload.fileName,
-      analysis: analysisData,
+      analysis: {
+        ...analysisData,
+        performance: {
+          overallGrade,
+          factorScores,
+        },
+      },
     });
   } catch (error) {
     console.error("Error analyzing audio:", error);
