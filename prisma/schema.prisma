@@ -7,6 +7,10 @@
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
+  # Include the Linux Query Engine for RHEL/OpenSSL (used by many hosts like Vercel/AWS)
+  # This makes `prisma generate` produce the native engine for that runtime so it
+  # is available in the deployed `.next/server/chunks` folder.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
