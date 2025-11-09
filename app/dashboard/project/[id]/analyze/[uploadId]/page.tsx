@@ -59,6 +59,28 @@ interface TimestampedSegment {
   text: string;
 }
 
+interface PerformanceFactorScores {
+  time: number;
+  coherence: number;
+  filler: number;
+  pauses: number;
+}
+
+interface PerformanceDetails {
+  timeGoalSeconds: number | null;
+  timeDeltaSeconds: number | null;
+  fillerPercentage: number;
+  longPauseCount: number;
+  wordsPerMinute: number;
+  averageGapDuration: number;
+}
+
+interface PerformanceMetrics {
+  overallGrade: number;
+  factorScores: PerformanceFactorScores;
+  details: PerformanceDetails;
+}
+
 interface AudioAnalysis {
   transcript: string;
   durationSeconds: number;
@@ -74,6 +96,7 @@ interface AudioAnalysis {
   timestampedTranscript?: TimestampedSegment[];
   overallCoherenceScore: number;
   suggestions: string[];
+  performance?: PerformanceMetrics;
 }
 
 interface Project {
@@ -149,71 +172,6 @@ export default function AudioAnalysisPage() {
     } catch (err) {
       console.error("Error fetching project:", err);
     }
-  };
-
-  const calculateGrade = (
-    analysis: AudioAnalysis,
-    project: Project
-  ): number => {
-    if (!analysis || !project) return 0;
-
-    // Time accuracy score (0-100)
-    let timeScore = 100;
-    if (project.timeframe > 0) {
-      const timeDiff = Math.abs(analysis.durationSeconds - project.timeframe);
-      const maxDiff = project.timeframe * 0.2; // 20% tolerance
-      timeScore = Math.max(0, 100 - (timeDiff / maxDiff) * 100);
-    }
-
-    // Coherence score (0-100) - using as proxy for tone
-    const coherenceScore = (analysis.overallCoherenceScore / 10) * 100;
-
-    // Filler words score (0-100) - lower filler % is better
-    const fillerPercentage =
-      (analysis.totalFillerWords / analysis.wordCount) * 100;
-    const fillerScore = Math.max(0, 100 - fillerPercentage * 5); // 5% filler = 75% score, etc.
-
-    // Long pauses score (0-100) - fewer long pauses is better
-    const longPauses = analysis.gaps.filter(
-      (g) => g.type === "long" || g.type === "excessive"
-    ).length;
-    const pauseScore = Math.max(0, 100 - longPauses * 10); // 10 long pauses = 0% score
-
-    // Average the scores
-    const totalScore =
-      (timeScore + coherenceScore + fillerScore + pauseScore) / 4;
-    return Math.round(totalScore);
-  };
-
-  const calculateFactorScores = (analysis: AudioAnalysis, project: Project) => {
-    // Time accuracy score (0-100)
-    let timeScore = 100;
-    if (project.timeframe > 0) {
-      const timeDiff = Math.abs(analysis.durationSeconds - project.timeframe);
-      const maxDiff = project.timeframe * 0.2; // 20% tolerance
-      timeScore = Math.max(0, 100 - (timeDiff / maxDiff) * 100);
-    }
-
-    // Coherence score (0-100) - using as proxy for tone
-    const coherenceScore = (analysis.overallCoherenceScore / 10) * 100;
-
-    // Filler words score (0-100) - lower filler % is better
-    const fillerPercentage =
-      (analysis.totalFillerWords / analysis.wordCount) * 100;
-    const fillerScore = Math.max(0, 100 - fillerPercentage * 5); // 5% filler = 75% score, etc.
-
-    // Long pauses score (0-100) - fewer long pauses is better
-    const longPauses = analysis.gaps.filter(
-      (g) => g.type === "long" || g.type === "excessive"
-    ).length;
-    const pauseScore = Math.max(0, 100 - longPauses * 10); // 10 long pauses = 0% score
-
-    return {
-      time: Math.round(timeScore),
-      coherence: Math.round(coherenceScore),
-      filler: Math.round(fillerScore),
-      pauses: Math.round(pauseScore),
-    };
   };
 
   useEffect(() => {
@@ -596,60 +554,65 @@ export default function AudioAnalysisPage() {
                       </h2>
                     </div>
                     <div className="grid grid-cols-1 gap-4">
-                      {project &&
-                        (() => {
-                          const scores = calculateFactorScores(
-                            analysis,
-                            project
+                      {(() => {
+                        if (!project) return null;
+                        const scores = analysis.performance?.factorScores;
+                        if (!scores) {
+                          return (
+                            <p className="text-sm text-muted-foreground">
+                              Performance metrics will appear after the server finishes scoring this upload.
+                            </p>
                           );
-                          return [
-                            {
-                              label: "Time Accuracy",
-                              score: scores.time,
-                              description:
-                                project.timeframe > 0
-                                  ? `Goal: ${formatTime(
-                                      project.timeframe / 1000
-                                    )}`
-                                  : "No time goal set",
-                            },
-                            {
-                              label: "Coherence & Tone",
-                              score: scores.coherence,
-                              description: `Score: ${analysis.overallCoherenceScore.toFixed(
-                                1
-                              )}/10`,
-                            },
-                            {
-                              label: "Filler Words",
-                              score: scores.filler,
-                              description: `${(
-                                (analysis.totalFillerWords /
-                                  analysis.wordCount) *
-                                100
-                              ).toFixed(1)}% of speech`,
-                            },
-                            {
-                              label: "Pause Control",
-                              score: scores.pauses,
-                              description: `${
-                                analysis.gaps.filter(
-                                  (g) =>
-                                    g.type === "long" || g.type === "excessive"
-                                ).length
-                              } long pauses`,
-                            },
-                            {
-                              label: "WPM",
-                              score: analysis.wpm || 0,
-                              description: `Words per minute: ${analysis.wpm || 0}`,
-                            },
-                          ].map((factor, index) => {
-                            const isWpm = factor.label === "WPM";
-                            const getBubbleColor = (score: number) => {
-                              if (isWpm) return "bg-sky-50 text-sky-600 border-sky-100";
-                              if (score >= 80)
-                                return "bg-emerald-500/10 text-emerald-600 border-emerald-100";
+                        }
+
+                        const details = analysis.performance?.details;
+                        const fillerPercentage = details?.fillerPercentage ?? 0;
+                        const longPauseCount = details?.longPauseCount ?? 0;
+                        const timeGoalSeconds =
+                          details?.timeGoalSeconds ??
+                          (project.timeframe > 0
+                            ? project.timeframe / 1000
+                            : null);
+                        const hasTimeGoal =
+                          typeof timeGoalSeconds === "number" &&
+                          timeGoalSeconds > 0;
+
+                        return [
+                          {
+                            label: "Time Accuracy",
+                            score: scores.time,
+                            description: hasTimeGoal
+                              ? `Goal: ${formatTime(timeGoalSeconds as number)}`
+                              : "No time goal set",
+                          },
+                          {
+                            label: "Coherence & Tone",
+                            score: scores.coherence,
+                            description: `Score: ${analysis.overallCoherenceScore.toFixed(
+                              1
+                            )}/10`,
+                          },
+                          {
+                            label: "Filler Words",
+                            score: scores.filler,
+                            description: `${fillerPercentage.toFixed(1)}% of speech`,
+                          },
+                          {
+                            label: "Pause Control",
+                            score: scores.pauses,
+                            description: `${longPauseCount} long pauses`,
+                          },
+                          {
+                            label: "WPM",
+                            score: analysis.wpm || 0,
+                            description: `Words per minute: ${analysis.wpm || 0}`,
+                          },
+                        ].map((factor, index) => {
+                          const isWpm = factor.label === "WPM";
+                          const getBubbleColor = (score: number) => {
+                            if (isWpm) return "bg-sky-50 text-sky-600 border-sky-100";
+                            if (score >= 80)
+                              return "bg-emerald-500/10 text-emerald-600 border-emerald-100";
                               if (score >= 60)
                                 return "bg-amber-500/10 text-amber-600 border-amber-100";
                               return "bg-rose-500/10 text-rose-600 border-rose-100";
@@ -684,7 +647,7 @@ export default function AudioAnalysisPage() {
                               </motion.div>
                             );
                           });
-                        })()}
+                      })()}
                     </div>
                   </div>
                 </motion.div>
@@ -696,86 +659,94 @@ export default function AudioAnalysisPage() {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.6, delay: 0.2 }}
                 >
-                  {project &&
-                    (() => {
-                      const grade = calculateGrade(analysis, project);
-                      const glowColor =
-                        grade > 85
-                          ? "bg-emerald-500/40"
-                          : grade >= 70
-                          ? "bg-amber-500/40"
-                          : "bg-rose-500/40";
-                      const textColor =
-                        grade > 85
-                          ? "text-emerald-500"
-                          : grade >= 70
-                          ? "text-amber-500"
-                          : "text-rose-500";
-                      const progressColor =
-                        grade > 85
-                          ? "stroke-emerald-500"
-                          : grade >= 70
-                          ? "stroke-amber-500"
-                          : "stroke-rose-500";
-                      const radius = 130;
-                      const circumference = 2 * Math.PI * radius;
-                      const strokeDashoffset =
-                        circumference * (1 - grade / 100);
+                  {(() => {
+                    const grade = analysis.performance?.overallGrade;
+                    if (typeof grade !== "number") {
                       return (
-                        <>
-                          <div className="relative flex items-center justify-center">
-                            <div
-                              className={`absolute inset-0 rounded-full blur-3xl ${glowColor}`}
-                              style={{ width: 320, height: 320 }}
-                            />
-                            <svg
-                              width="288"
-                              height="288"
-                              viewBox="0 0 288 288"
-                              className="relative"
-                            >
-                              {/* Background circle */}
-                              <circle
-                                cx="144"
-                                cy="144"
-                                r={radius}
-                                stroke="currentColor"
-                                strokeWidth="8"
-                                fill="none"
-                                className="text-muted-foreground/20"
-                              />
-                              {/* Progress circle */}
-                              <circle
-                                cx="144"
-                                cy="144"
-                                r={radius}
-                                stroke="currentColor"
-                                strokeWidth="8"
-                                fill="none"
-                                strokeDasharray={circumference}
-                                strokeDashoffset={strokeDashoffset}
-                                strokeLinecap="round"
-                                className={progressColor}
-                                transform="rotate(-90 144 144)"
-                              />
-                              {/* Center text */}
-                              <text
-                                x="144"
-                                y="144"
-                                textAnchor="middle"
-                                dominantBaseline="middle"
-                                className={`text-9xl font-semibold font-serif tracking-tight fill-current ${textColor}`}
-                              >
-                                {grade}
-                              </text>
-                            </svg>
-                          </div>
-                          <p className="text-muted-foreground mt-4 text-xl font-medium">
-                            Overall score
-                          </p>
-                        </>
+                        <p className="text-sm text-muted-foreground">
+                          Performance grade will appear after scoring completes.
+                        </p>
                       );
-                    })()}
+                    }
+
+                    const glowColor =
+                      grade > 85
+                        ? "bg-emerald-500/40"
+                        : grade >= 70
+                        ? "bg-amber-500/40"
+                        : "bg-rose-500/40";
+                    const textColor =
+                      grade > 85
+                        ? "text-emerald-500"
+                        : grade >= 70
+                        ? "text-amber-500"
+                        : "text-rose-500";
+                    const progressColor =
+                      grade > 85
+                        ? "stroke-emerald-500"
+                        : grade >= 70
+                        ? "stroke-amber-500"
+                        : "stroke-rose-500";
+                    const radius = 130;
+                    const circumference = 2 * Math.PI * radius;
+                    const strokeDashoffset =
+                      circumference * (1 - grade / 100);
+
+                    return (
+                      <>
+                        <div className="relative flex items-center justify-center">
+                          <div
+                            className={`absolute inset-0 rounded-full blur-3xl ${glowColor}`}
+                            style={{ width: 320, height: 320 }}
+                          />
+                          <svg
+                            width="288"
+                            height="288"
+                            viewBox="0 0 288 288"
+                            className="relative"
+                          >
+                            {/* Background circle */}
+                            <circle
+                              cx="144"
+                              cy="144"
+                              r={radius}
+                              stroke="currentColor"
+                              strokeWidth="8"
+                              fill="none"
+                              className="text-muted-foreground/20"
+                            />
+                            {/* Progress circle */}
+                            <circle
+                              cx="144"
+                              cy="144"
+                              r={radius}
+                              stroke="currentColor"
+                              strokeWidth="8"
+                              fill="none"
+                              strokeDasharray={circumference}
+                              strokeDashoffset={strokeDashoffset}
+                              strokeLinecap="round"
+                              className={progressColor}
+                              transform="rotate(-90 144 144)"
+                            />
+                            {/* Center text */}
+                            <text
+                              x="144"
+                              y="144"
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              className={`text-9xl font-semibold font-serif tracking-tight fill-current ${textColor}`}
+                            >
+                              {grade}
+                            </text>
+                          </svg>
+                        </div>
+                        <p className="text-muted-foreground mt-4 text-xl font-medium">
+                          Overall score
+                        </p>
+                      </>
+                    );
+                  })()}
                 </motion.div>
 
                 {/* Right Column - Recommendations */}

@@ -109,6 +109,7 @@ model AudioAnalysis {
   timestampedTranscript Json?
   overallCoherenceScore Float
   suggestions Json
+  performance Json?
   createdAt DateTime @default(now())
 
   @@map("audioAnalysis")

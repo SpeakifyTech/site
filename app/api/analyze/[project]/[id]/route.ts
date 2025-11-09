@@ -76,29 +76,64 @@ const AudioAnalysisSchema = z.object({
 });
 
 // Server-side performance calculation functions
+interface PerformanceFactorScores {
+  time: number;
+  coherence: number;
+  filler: number;
+  pauses: number;
+}
+
+interface PerformanceDetails {
+  timeGoalSeconds: number | null;
+  timeDeltaSeconds: number | null;
+  fillerPercentage: number;
+  longPauseCount: number;
+  wordsPerMinute: number;
+  averageGapDuration: number;
+}
+
+interface PerformanceMetrics {
+  overallGrade: number;
+  factorScores: PerformanceFactorScores;
+  details: PerformanceDetails;
+}
+
+const getProjectTimeframeSeconds = (project: Project): number | null => {
+  if (!project?.timeframe || project.timeframe <= 0) {
+    return null;
+  }
+  return project.timeframe / 1000;
+};
+
 function calculateOverallGrade(analysis: any, project: Project): number {
   if (!analysis || !project) return 0;
 
+  const timeframeSeconds = getProjectTimeframeSeconds(project);
+
   // Time accuracy score (0-100)
   let timeScore = 100;
-  if (project.timeframe > 0) {
-    const timeDiff = Math.abs(analysis.durationSeconds - project.timeframe);
-    const maxDiff = project.timeframe * 0.2; // 20% tolerance
+  if (typeof timeframeSeconds === "number" && timeframeSeconds > 0) {
+    const timeDiff = Math.abs(analysis.durationSeconds - timeframeSeconds);
+    const maxDiff = Math.max(timeframeSeconds * 0.2, 1); // 20% tolerance
     timeScore = Math.max(0, 100 - (timeDiff / maxDiff) * 100);
   }
 
   // Coherence score (0-100) - using as proxy for tone
-  const coherenceScore = (analysis.overallCoherenceScore / 10) * 100;
+  const coherenceScore = ((analysis.overallCoherenceScore ?? 0) / 10) * 100;
 
   // Filler words score (0-100) - lower filler % is better
   const fillerPercentage =
-    (analysis.totalFillerWords / analysis.wordCount) * 100;
+    analysis.wordCount > 0
+      ? (analysis.totalFillerWords / analysis.wordCount) * 100
+      : 0;
   const fillerScore = Math.max(0, 100 - fillerPercentage * 5); // 5% filler = 75% score, etc.
 
   // Long pauses score (0-100) - fewer long pauses is better
-  const longPauses = analysis.gaps.filter(
-    (g: any) => g.type === "long" || g.type === "excessive"
-  ).length;
+  const longPauses = Array.isArray(analysis.gaps)
+    ? analysis.gaps.filter(
+        (g: any) => g.type === "long" || g.type === "excessive"
+      ).length
+    : 0;
   const pauseScore = Math.max(0, 100 - longPauses * 10); // 10 long pauses = 0% score
 
   // Average the scores
@@ -107,27 +142,36 @@ function calculateOverallGrade(analysis: any, project: Project): number {
   return Math.round(totalScore);
 }
 
-function calculateFactorScores(analysis: any, project: Project) {
+function calculateFactorScores(
+  analysis: any,
+  project: Project
+): PerformanceFactorScores {
+  const timeframeSeconds = getProjectTimeframeSeconds(project);
+
   // Time accuracy score (0-100)
   let timeScore = 100;
-  if (project.timeframe > 0) {
-    const timeDiff = Math.abs(analysis.durationSeconds - project.timeframe);
-    const maxDiff = project.timeframe * 0.2; // 20% tolerance
+  if (typeof timeframeSeconds === "number" && timeframeSeconds > 0) {
+    const timeDiff = Math.abs(analysis.durationSeconds - timeframeSeconds);
+    const maxDiff = Math.max(timeframeSeconds * 0.2, 1); // 20% tolerance
     timeScore = Math.max(0, 100 - (timeDiff / maxDiff) * 100);
   }
 
   // Coherence score (0-100) - using as proxy for tone
-  const coherenceScore = (analysis.overallCoherenceScore / 10) * 100;
+  const coherenceScore = ((analysis.overallCoherenceScore ?? 0) / 10) * 100;
 
   // Filler words score (0-100) - lower filler % is better
   const fillerPercentage =
-    (analysis.totalFillerWords / analysis.wordCount) * 100;
+    analysis.wordCount > 0
+      ? (analysis.totalFillerWords / analysis.wordCount) * 100
+      : 0;
   const fillerScore = Math.max(0, 100 - fillerPercentage * 5); // 5% filler = 75% score, etc.
 
   // Long pauses score (0-100) - fewer long pauses is better
-  const longPauses = analysis.gaps.filter(
-    (g: any) => g.type === "long" || g.type === "excessive"
-  ).length;
+  const longPauses = Array.isArray(analysis.gaps)
+    ? analysis.gaps.filter(
+        (g: any) => g.type === "long" || g.type === "excessive"
+      ).length
+    : 0;
   const pauseScore = Math.max(0, 100 - longPauses * 10); // 10 long pauses = 0% score
 
   return {
@@ -135,6 +179,41 @@ function calculateFactorScores(analysis: any, project: Project) {
     coherence: Math.round(coherenceScore),
     filler: Math.round(fillerScore),
     pauses: Math.round(pauseScore),
+  };
+}
+
+function buildPerformanceMetrics(
+  analysis: any,
+  project: Project
+): PerformanceMetrics {
+  const fillerPercentage =
+    analysis.wordCount > 0
+      ? (analysis.totalFillerWords / analysis.wordCount) * 100
+      : 0;
+
+  const longPauseCount = Array.isArray(analysis.gaps)
+    ? analysis.gaps.filter(
+        (g: any) => g.type === "long" || g.type === "excessive"
+      ).length
+    : 0;
+
+  const timeGoalSeconds = getProjectTimeframeSeconds(project);
+  const timeDeltaSeconds =
+    typeof timeGoalSeconds === "number"
+      ? analysis.durationSeconds - timeGoalSeconds
+      : null;
+
+  return {
+    overallGrade: calculateOverallGrade(analysis, project),
+    factorScores: calculateFactorScores(analysis, project),
+    details: {
+      timeGoalSeconds,
+      timeDeltaSeconds,
+      fillerPercentage,
+      longPauseCount,
+      wordsPerMinute: analysis.wpm ?? 0,
+      averageGapDuration: analysis.averageGapDuration ?? 0,
+    },
   };
 }
 
@@ -217,9 +296,14 @@ export async function GET(
         suggestions: upload.analysis.suggestions,
       };
 
-      // Calculate server-side performance metrics
-      const overallGrade = calculateOverallGrade(cachedAnalysis, project);
-      const factorScores = calculateFactorScores(cachedAnalysis, project);
+      let performance = (upload.analysis.performance as PerformanceMetrics) || null;
+      if (!performance) {
+        performance = buildPerformanceMetrics(cachedAnalysis, project);
+        await prisma.audioAnalysis.update({
+          where: { uploadId: upload.id },
+          data: { performance },
+        });
+      }
 
       return NextResponse.json({
         success: true,
@@ -227,10 +311,7 @@ export async function GET(
         fileName: upload.fileName,
         analysis: {
           ...cachedAnalysis,
-          performance: {
-            overallGrade,
-            factorScores,
-          },
+          performance,
         },
         cached: true,
       });
@@ -432,6 +513,7 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
     analysisData.wpm = serverWpm;
     console.log("Computed server-side wordCount and wpm:", { serverWordCount, serverWpm });
     console.log("Analysis parsed successfully");
+    const performanceMetrics = buildPerformanceMetrics(analysisData, project);
 
     // Save analysis to database
     console.log("Saving analysis to database...");
@@ -450,6 +532,7 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
         sentenceIssues: analysisData.coherenceIssues,
         overallCoherenceScore: analysisData.overallCoherenceScore,
         suggestions: analysisData.suggestions,
+        performance: performanceMetrics,
         ...(analysisData.timestampedTranscript ? { timestampedTranscript: analysisData.timestampedTranscript } : {}),
       };
 
@@ -474,16 +557,13 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
         sentenceIssues: analysisData.coherenceIssues,
         overallCoherenceScore: analysisData.overallCoherenceScore,
         suggestions: analysisData.suggestions,
+        performance: performanceMetrics,
         ...(analysisData.timestampedTranscript ? { timestampedTranscript: analysisData.timestampedTranscript } : {}),
       };
 
       await prisma.audioAnalysis.create({ data: createData });
       console.log("Analysis saved to database");
     }
-
-    // Calculate server-side performance metrics
-    const overallGrade = calculateOverallGrade(analysisData, project);
-    const factorScores = calculateFactorScores(analysisData, project);
 
     // Return the structured analysis with calculated performance metrics
     return NextResponse.json({
@@ -492,10 +572,7 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
       fileName: upload.fileName,
       analysis: {
         ...analysisData,
-        performance: {
-          overallGrade,
-          factorScores,
-        },
+        performance: performanceMetrics,
       },
     });
   } catch (error) {
