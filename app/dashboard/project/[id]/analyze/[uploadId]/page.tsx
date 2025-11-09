@@ -9,7 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, ArrowLeft, Clock, MessageSquare, Gauge, TrendingUp, AlertTriangle, CheckCircle2, Info, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";

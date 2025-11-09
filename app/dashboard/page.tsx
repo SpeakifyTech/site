@@ -19,12 +19,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Plus, Edit, Trash2, AlertTriangle, Info } from "lucide-react";
+import { Loader2, Plus, Edit, Trash2, Info } from "lucide-react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -60,19 +58,8 @@ export default function Dashboard() {
   const [editStrictMode, setEditStrictMode] = useState(false);
   const [editTimeframe, setEditTimeframe] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
-
-  const handleSignOut = async () => {
-    await authClient.signOut({
-      fetchOptions: {
-        onSuccess: () => {
-          router.push("/");
-        },
-      },
-    });
-  };
 
   const fetchProjects = async () => {
     try {
@@ -133,7 +120,6 @@ export default function Dashboard() {
         setStrictMode(false);
         setTimeframe("");
         setIsModalOpen(false);
-        setErrorMessage("");
         fetchProjects(); // Refresh the list
       } else {
         setMessage(data.error || "Failed to create project");
@@ -151,7 +137,6 @@ export default function Dashboard() {
     setEditVibe(project.vibe || "");
     setEditStrictMode(project.strict ?? false);
     setEditTimeframe(project.timeframe ? String(Math.round(project.timeframe / 1000)) : "");
-    setErrorMessage("");
     setIsEditModalOpen(true);
   };
 
@@ -165,7 +150,7 @@ export default function Dashboard() {
       const parsedTimeframe = timeframeValue ? Number.parseInt(timeframeValue, 10) : 0;
 
       if (timeframeValue && (Number.isNaN(parsedTimeframe) || parsedTimeframe < 0)) {
-        setErrorMessage("Timeframe must be a non-negative integer.");
+        console.error("Timeframe must be a non-negative integer.");
         setIsUpdating(false);
         return;
       }
@@ -187,16 +172,15 @@ export default function Dashboard() {
       if (res.ok) {
         setIsEditModalOpen(false);
         setEditingProject(null);
-        setErrorMessage("");
         setEditVibe("");
         setEditStrictMode(false);
         setEditTimeframe("");
         fetchProjects(); // Refresh the list
       } else {
-        setErrorMessage(data.error || "Failed to update project");
+        console.error(data.error || "Failed to update project");
       }
     } catch (err) {
-      setErrorMessage("An error occurred");
+      console.error("An error occurred");
     }
     setIsUpdating(false);
   };
@@ -214,14 +198,13 @@ export default function Dashboard() {
         method: "DELETE",
       });
       if (res.ok) {
-        setErrorMessage("");
         fetchProjects(); // Refresh the list
       } else {
         const data = await res.json() as { error?: string };
-        setErrorMessage(data.error || "Failed to delete project");
+        console.error(data.error || "Failed to delete project");
       }
     } catch (err) {
-      setErrorMessage("An error occurred");
+      console.error("An error occurred");
     }
     setProjectToDelete(null);
   };
