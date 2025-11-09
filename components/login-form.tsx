@@ -168,7 +168,6 @@ export function LoginForm({
                     ? "Already have an account?"
                     : "Don't have an account?"}{" "}
                   <a
-                    href="#"
                     onClick={(e) => {
                       e.preventDefault();
                       setIsSignUp(!isSignUp);

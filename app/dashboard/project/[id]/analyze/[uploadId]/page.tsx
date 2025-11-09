@@ -5,23 +5,25 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
+
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Clock, MessageSquare, Gauge, TrendingUp, AlertTriangle, Info, RefreshCw } from "lucide-react";
+import { Loader2, AlertTriangle, Info, RefreshCw } from "lucide-react";
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
+
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { motion } from "framer-motion";
+import { Play, Pause } from "lucide-react";
 
 interface FillerWord {
   word: string;
@@ -96,6 +98,12 @@ export default function AudioAnalysisPage() {
   const [hasFetched, setHasFetched] = useState(false);
   const [project, setProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<string>("overview");
+  
+  // Audio playback state
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   const fetchProject = async () => {
     try {
@@ -166,12 +174,6 @@ export default function AudioAnalysisPage() {
     };
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return "text-green-600";
-    if (score >= 60) return "text-yellow-600";
-    return "text-red-600";
-  };
-
   useEffect(() => {
     console.log("useEffect triggered:", { session: !!session, projectId, uploadId, isPending, hasFetched });
 
@@ -181,6 +183,14 @@ export default function AudioAnalysisPage() {
       fetchAnalysis();
     }
   }, [session, projectId, uploadId, hasFetched, isPending]);
+
+  // Set duration from analysis data as fallback
+  useEffect(() => {
+    if (analysis && !duration) {
+      console.log('Setting duration from analysis:', analysis.durationSeconds);
+      setDuration(analysis.durationSeconds);
+    }
+  }, [analysis, duration]);
 
   const fetchAnalysis = async (isRetry = false) => {
     try {
@@ -260,6 +270,68 @@ export default function AudioAnalysisPage() {
     return "text-red-600";
   };
 
+  // Audio control functions
+  const togglePlayPause = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      const audioDuration = audioRef.current.duration;
+      console.log('Audio duration loaded:', audioDuration);
+      if (!isNaN(audioDuration) && audioDuration > 0) {
+        setDuration(audioDuration);
+      } else {
+        // Fallback to analysis duration if audio duration is not available
+        console.log('Using analysis duration as fallback:', analysis?.durationSeconds);
+        setDuration(analysis?.durationSeconds || 0);
+      }
+    }
+  };
+
+  const handleTimelineClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const currentDuration = duration || analysis?.durationSeconds || 0;
+    console.log('Timeline clicked, duration:', currentDuration);
+    if (audioRef.current && currentDuration > 0) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const percentage = clickX / rect.width;
+      const newTime = percentage * currentDuration;
+      console.log('Jumping to time:', newTime);
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+    }
+  };
+
+  const jumpToSegment = (segment: SpeechSegment) => {
+    console.log('Jumping to segment:', segment.startTime);
+    if (audioRef.current) {
+      // Parse start time (assuming format like "0:15" or "1:23")
+      const [mins, secs] = segment.startTime.split(':').map(Number);
+      const startTime = mins * 60 + secs;
+      console.log('Parsed start time:', startTime);
+      audioRef.current.currentTime = startTime;
+      setCurrentTime(startTime);
+      if (!isPlaying) {
+        setIsPlaying(true);
+        audioRef.current.play();
+      }
+    }
+  };
+
   if (isPending) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -311,7 +383,7 @@ export default function AudioAnalysisPage() {
       </div>
 
       {errorMessage && (
-        <Alert variant="destructive" className="mb-6">
+        <Alert variant="destructive" className="mb-4 items-center">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className="flex items-center justify-between">
             <span>{errorMessage}</span>
@@ -333,6 +405,19 @@ export default function AudioAnalysisPage() {
 
       {analysis && (
         <>
+          {/* Hidden Audio Element */}
+          <audio
+            ref={audioRef}
+            src={`/api/uploads/${projectId}/${uploadId}`}
+            onTimeUpdate={handleTimeUpdate}
+            onLoadedMetadata={handleLoadedMetadata}
+            onEnded={() => setIsPlaying(false)}
+            onError={(e) => console.error('Audio loading error:', e)}
+            onLoadStart={() => console.log('Audio load started')}
+            onCanPlay={() => console.log('Audio can play')}
+            preload="metadata"
+          />
+
           {/* Hero Header */}
           <motion.div 
             className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between"
@@ -350,25 +435,6 @@ export default function AudioAnalysisPage() {
               </p>
             </div>
             <div className="flex flex-col items-end gap-2">
-              {project && (
-                <div className="flex flex-col items-end">
-                  <span className="text-xs uppercase text-muted-foreground">Overall performance</span>
-                  {(() => {
-                    const grade = calculateGrade(analysis, project)
-                    const color = grade > 85
-                      ? "text-green-500"
-                      : grade >= 70
-                        ? "text-yellow-500"
-                        : "text-red-500"
-                    return (
-                      <span className={`text-4xl font-semibold leading-none ${color}`}>
-                        {grade}%
-                      </span>
-                    )
-                  })()}
-
-                </div>
-              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -391,34 +457,54 @@ export default function AudioAnalysisPage() {
             </div>
           </motion.div>
 
-          {/* Tab Navigation */}
+          {/* Pill Tabs Navigation */}
           <motion.div 
-            className="mb-6"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
+            className="mb-8 flex justify-center"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
           >
-            <div className="flex space-x-1 border-b">
+            <div className="relative flex bg-muted/50 p-2 rounded-full backdrop-blur-sm border shadow-lg">
+              {/* Animated pill background */}
+              <motion.div
+                layout
+                layoutId="active-pill"
+                className="absolute top-2 bottom-2 rounded-full bg-primary shadow-lg"
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                style={{
+                  // This element's size/position will be driven by the active tab button via layoutId
+                  zIndex: 0,
+                }}
+              />
+
               {[
                 { id: "overview", label: "Overview" },
                 { id: "structure", label: "Structure" },
-                { id: "time", label: "Time" },
                 { id: "coherence", label: "Coherence" },
                 { id: "pauses", label: "Pauses" },
                 { id: "filler", label: "Filler Words" },
                 { id: "transcript", label: "Transcript" },
               ].map((tab) => (
-                <button
+                <motion.button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  className={`relative px-6 py-2 text-sm font-medium rounded-full transition-colors duration-200 z-10 ${
                     activeTab === tab.id
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
+                      ? "text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
+                  layout
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
                 >
-                  {tab.label}
-                </button>
+                  {activeTab === tab.id && (
+                    <motion.span
+                      layoutId="active-pill"
+                      className="absolute inset-0 rounded-full bg-primary shadow-lg -z-10"
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    />
+                  )}
+                  <span className="relative z-10">{tab.label}</span>
+                </motion.button>
               ))}
             </div>
           </motion.div>
@@ -426,111 +512,21 @@ export default function AudioAnalysisPage() {
           {/* Tab Content */}
           {activeTab === "overview" && (
             <>
-              {/* Key Metrics */}
-              <motion.div 
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.3 }}
-              >
+              {/* Three Column Layout */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                {/* Left Column - Performance Factors */}
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, delay: 0.4 }}
+                  initial={{ opacity: 0, x: -30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.6, delay: 0.3 }}
                 >
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium flex items-center gap-2">
-                        <Clock className="h-4 w-4" />
-                        Duration
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{formatTime(analysis.durationSeconds)}</div>
-                      <p className="text-xs text-muted-foreground">{analysis.wordCount} words</p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
+                  <div className="h-fit">
+                    <div className="mb-3 flex items-baseline gap-2">
+                      <h2 className="text-base font-semibold text-foreground">Performance breakdown</h2>
 
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, delay: 0.5 }}
-                >
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium flex items-center gap-2">
-                        <Gauge className="h-4 w-4" />
-                        Speaking Rate
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{Math.round(analysis.wpm)} WPM</div>
-                      <p className="text-xs text-muted-foreground">
-                        {analysis.wpm < 120 ? "Slow" : analysis.wpm < 160 ? "Normal" : "Fast"}
-                      </p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, delay: 0.6 }}
-                >
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium flex items-center gap-2">
-                        <MessageSquare className="h-4 w-4" />
-                        Filler Words
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{analysis.totalFillerWords}</div>
-                      <p className="text-xs text-muted-foreground">
-                        {((analysis.totalFillerWords / analysis.wordCount) * 100).toFixed(1)}% of speech
-                      </p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, delay: 0.7 }}
-                >
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium flex items-center gap-2">
-                        <TrendingUp className="h-4 w-4" />
-                        Coherence Score
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className={`text-2xl font-bold ${getCoherenceColor(analysis.overallCoherenceScore)}`}>
-                        {analysis.overallCoherenceScore.toFixed(1)}/10
-                      </div>
-                      <p className="text-xs text-muted-foreground">Overall quality</p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              </motion.div>
-
-              {/* Factor Breakdown */}
-              {project && (
-                <motion.div
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.5 }}
-                >
-                  <Card className="mb-6">
-                    <CardHeader>
-                      <CardTitle>Performance Breakdown</CardTitle>
-                      <CardDescription>Individual scores for each factor contributing to your grade</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {(() => {
+                    </div>
+                    <div className="grid grid-cols-1 gap-4">
+                      {project && (() => {
                           const scores = calculateFactorScores(analysis, project);
                           return [
                             {
@@ -553,219 +549,583 @@ export default function AudioAnalysisPage() {
                               score: scores.pauses,
                               description: `${analysis.gaps.filter(g => g.type === 'long' || g.type === 'excessive').length} long pauses`,
                             },
-                          ].map((factor, index) => (
-                            <motion.div 
-                              key={index} 
-                              className="text-center p-4 border rounded-lg"
-                              initial={{ opacity: 0, y: 20 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.4, delay: 0.6 + index * 0.1 }}
-                            >
-                              <div className={`text-3xl font-bold mb-2 ${getScoreColor(factor.score)}`}>
-                                {factor.score}%
-                              </div>
-                              <h3 className="font-semibold mb-1">{factor.label}</h3>
-                              <p className="text-sm text-muted-foreground">{factor.description}</p>
-                            </motion.div>
-                          ));
+                          ].map((factor, index) => {
+                            const getBubbleColor = (score: number) => {
+                              if (score >= 80) return "bg-emerald-500/10 text-emerald-600 border-emerald-100";
+                              if (score >= 60) return "bg-amber-500/10 text-amber-600 border-amber-100";
+                              return "bg-rose-500/10 text-rose-600 border-rose-100";
+                            };
+
+                            return (
+                              <motion.div 
+                                key={index} 
+                                className={`flex flex-col items-start gap-1 px-4 py-3 rounded-2xl border backdrop-blur-sm ${getBubbleColor(factor.score)}`}
+                                initial={{ opacity: 0, y: 6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.25, delay: 0.15 + index * 0.05 }}
+                              >
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-lg font-semibold">{factor.score}%</span>
+                                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{factor.label}</span>
+                                </div>
+                                <p className="text-[11px] text-muted-foreground">{factor.description}</p>
+                              </motion.div>
+                            );
+                          });
                         })()}
                       </div>
-                    </CardContent>
-                  </Card>
+                    </div>
                 </motion.div>
-              )}
 
-              {/* Suggestions */}
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.7 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Recommendations</CardTitle>
-                    <CardDescription>Actionable suggestions to improve your speech</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
+                {/* Center Column - Overall Percentage (glowing circle) */}
+                <motion.div
+                  className="flex flex-col items-center justify-center mt-12"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: 0.2 }}
+                >
+                  {project && (() => {
+                    const grade = calculateGrade(analysis, project);
+                    const glowColor = grade > 85
+                      ? "bg-emerald-500/40"
+                      : grade >= 70
+                        ? "bg-amber-500/40"
+                        : "bg-rose-500/40";
+                    const textColor = grade > 85
+                      ? "text-emerald-500"
+                      : grade >= 70
+                        ? "text-amber-500"
+                        : "text-rose-500";
+                    const progressColor = grade > 85
+                      ? "stroke-emerald-500"
+                      : grade >= 70
+                        ? "stroke-amber-500"
+                        : "stroke-rose-500";
+                    const radius = 130;
+                    const circumference = 2 * Math.PI * radius;
+                    const strokeDashoffset = circumference * (1 - grade / 100);
+                    return (
+                      <>
+                        <div className="relative flex items-center justify-center">
+                          <div
+                            className={`absolute inset-0 rounded-full blur-3xl ${glowColor}`}
+                            style={{ width: 320, height: 320 }}
+                          />
+                          <svg width="288" height="288" viewBox="0 0 288 288" className="relative">
+                            {/* Background circle */}
+                            <circle
+                              cx="144"
+                              cy="144"
+                              r={radius}
+                              stroke="currentColor"
+                              strokeWidth="8"
+                              fill="none"
+                              className="text-muted-foreground/20"
+                            />
+                            {/* Progress circle */}
+                            <circle
+                              cx="144"
+                              cy="144"
+                              r={radius}
+                              stroke="currentColor"
+                              strokeWidth="8"
+                              fill="none"
+                              strokeDasharray={circumference}
+                              strokeDashoffset={strokeDashoffset}
+                              strokeLinecap="round"
+                              className={progressColor}
+                              transform="rotate(-90 144 144)"
+                            />
+                            {/* Center text */}
+                            <text
+                              x="144"
+                              y="144"
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                              className={`text-9xl font-semibold font-serif tracking-tight fill-current ${textColor}`}
+                            >
+                              {grade}
+                            </text>
+                          </svg>
+                        </div>
+                        <p className="text-muted-foreground mt-4 text-xl font-medium">Overall score</p>
+                      </>
+                    );
+                  })()}
+                </motion.div>
+
+                {/* Right Column - Recommendations */}
+                <motion.div
+                  initial={{ opacity: 0, x: 30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.6, delay: 0.3 }}
+                >
+                  <div className="h-fit">
+                    <div className="mb-3 flex items-center gap-2">
+                      <Info className="h-4 w-4 text-primary" />
+                      <h2 className="text-base font-semibold text-foreground">Recommendations</h2>
+                    </div>
+                    <div className="max-h-96 overflow-y-auto space-y-2 pr-1">
                       {analysis.suggestions.map((suggestion, index) => (
-                        <motion.div 
-                          key={index} 
-                          className="flex items-start gap-3 p-3 bg-muted rounded-lg"
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ duration: 0.4, delay: 0.8 + index * 0.1 }}
+                        <motion.div
+                          key={index}
+                          className="flex items-start gap-2 px-3 py-2 rounded-xl bg-muted/60 border border-border/60"
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.25, delay: 0.15 + index * 0.04 }}
                         >
-                          <Info className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                          <p className="text-sm">{suggestion}</p>
+                          <div className="mt-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                          <p className="text-xs leading-relaxed text-muted-foreground">{suggestion}</p>
                         </motion.div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
+                  </div>
+                </motion.div>
+              </div>
             </>
           )}
 
-          {activeTab === "structure" && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle>Speech Structure</CardTitle>
-                  <CardDescription>Breakdown of your speech into logical segments</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {analysis.speechSegments.map((segment, index) => (
-                      <motion.div 
-                        key={index} 
-                        className="border rounded-lg p-4"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: index * 0.1 }}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <span className="inline-block px-2 py-1 text-xs font-semibold rounded-full bg-primary/10 text-primary capitalize mb-2">
-                              {segment.type}
-                            </span>
-                            <p className="text-sm text-muted-foreground">
-                              {segment.startTime} - {segment.endTime}
-                            </p>
-                          </div>
-                          <div className={`text-lg font-bold ${getCoherenceColor(segment.coherenceScore)}`}>
-                            {segment.coherenceScore.toFixed(1)}/10
-                          </div>
-                        </div>
-                        <p className="text-sm">{segment.content}</p>
-                      </motion.div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
 
-          {activeTab === "time" && project && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle>Time Analysis</CardTitle>
-                  <CardDescription>How close you were to your goal time</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center mb-4">
-                    <div className="text-4xl font-bold mb-2">
-                      {formatTime(analysis.durationSeconds)}
-                    </div>
-                    <p className="text-muted-foreground">
-                      Goal: {project.timeframe > 0 ? formatTime(project.timeframe / 1000) : 'Not set'}
-                    </p>
-                    {project.timeframe > 0 && (
-                      <p className="text-sm mt-2">
-                        Difference: {Math.abs(analysis.durationSeconds - project.timeframe / 1000).toFixed(1)}s 
-                        ({analysis.durationSeconds > project.timeframe / 1000 ? 'over' : 'under'})
-                      </p>
+          {activeTab === "structure" && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold">Speech Structure Timeline</h2>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-muted-foreground">
+                    {formatTime(currentTime)} / {formatTime(duration || analysis?.durationSeconds || 0)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={togglePlayPause}
+                    className="flex items-center gap-2"
+                  >
+                    {isPlaying ? (
+                      <Pause className="h-4 w-4" />
+                    ) : (
+                      <Play className="h-4 w-4" />
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+                    {isPlaying ? "Pause" : "Play"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Horizontal Timeline */}
+              <div className="relative">
+                {/* Timeline track */}
+                <div
+                  className="relative h-2 bg-muted rounded-full cursor-pointer"
+                  onClick={handleTimelineClick}
+                >
+                  {/* Progress bar */}
+                  <div
+                    className="absolute top-0 left-0 h-full bg-gray-300 rounded-full transition-all duration-200"
+                    style={{ width: `${(duration || analysis?.durationSeconds || 0) > 0 ? (currentTime / (duration || analysis?.durationSeconds || 1)) * 100 : 0}%` }}
+                  />
+                  
+                  {/* Segment markers */}
+                  {analysis.speechSegments.map((segment, index) => {
+                    // Parse start and end times (assuming format like "0:15" or "1:23")
+                    const parseTime = (timeStr: string) => {
+                      const [mins, secs] = timeStr.split(':').map(Number);
+                      return mins * 60 + secs;
+                    };
+                    
+                    const currentDuration = duration || analysis.durationSeconds || 0;
+                    const startTime = parseTime(segment.startTime);
+                    const endTime = parseTime(segment.endTime);
+                    const startPercent = currentDuration > 0 ? (startTime / currentDuration) * 100 : 0;
+                    const widthPercent = currentDuration > 0 ? ((endTime - startTime) / currentDuration) * 100 : 0;
+                    
+                    const getSegmentColor = (type: string) => {
+                      switch (type) {
+                        case "introduction":
+                          return "bg-blue-500";
+                        case "body":
+                          return "bg-green-500";
+                        case "transition":
+                          return "bg-yellow-500";
+                        case "conclusion":
+                          return "bg-purple-500";
+                        default:
+                          return "bg-gray-500";
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={index}
+                        className={`absolute top-0 h-full rounded-full opacity-80 ${getSegmentColor(segment.type)} cursor-pointer hover:opacity-100 transition-opacity`}
+                        style={{
+                          left: `${startPercent}%`,
+                          width: `${Math.max(widthPercent, 0.5)}%`, // Minimum width for visibility
+                        }}
+                        title={`${segment.type}: ${segment.startTime} - ${segment.endTime} (Click to jump)`}
+                        onClick={(e) => {
+                          e.stopPropagation(); // Prevent timeline click
+                          jumpToSegment(segment);
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+                
+                {/* Time markers */}
+                <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                  <span>0:00</span>
+                  <span>{formatTime(duration || analysis?.durationSeconds || 0)}</span>
+                </div>
+              </div>
+
+              {/* Segment Details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {analysis.speechSegments.map((segment, index) => {
+                  const getSegmentColor = (type: string) => {
+                    switch (type) {
+                      case "introduction":
+                        return "border-blue-200 bg-blue-50/50";
+                      case "body":
+                        return "border-green-200 bg-green-50/50";
+                      case "transition":
+                        return "border-yellow-200 bg-yellow-50/50";
+                      case "conclusion":
+                        return "border-purple-200 bg-purple-50/50";
+                      default:
+                        return "border-gray-200 bg-gray-50/50";
+                    }
+                  };
+
+                  return (
+                    <motion.div
+                      key={index}
+                      className={`border rounded-lg p-4 ${getSegmentColor(segment.type)} cursor-pointer hover:shadow-md transition-shadow`}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: index * 0.1 }}
+                      onClick={() => jumpToSegment(segment)}
+                      title="Click to jump to this segment"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <span className="inline-block px-2 py-1 text-xs font-semibold rounded-full bg-primary/10 text-primary capitalize mb-2">
+                            {segment.type}
+                          </span>
+                          <p className="text-sm text-muted-foreground font-mono">
+                            {segment.startTime} - {segment.endTime}
+                          </p>
+                        </div>
+                        <div className={`text-lg font-bold ${getCoherenceColor(segment.coherenceScore)}`}>
+                          {segment.coherenceScore.toFixed(1)}/10
+                        </div>
+                      </div>
+                      <p className="text-sm leading-relaxed">{segment.content}</p>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
           {activeTab === "coherence" && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle>Coherence & Tone Analysis</CardTitle>
-                  <CardDescription>Your speech coherence score and tone alignment</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center mb-4">
-                    <div className={`text-4xl font-bold mb-2 ${getCoherenceColor(analysis.overallCoherenceScore)}`}>
-                      {analysis.overallCoherenceScore.toFixed(1)}/10
-                    </div>
-                    <p className="text-muted-foreground">
-                      Desired Tone: {project?.vibe || 'Not specified'}
-                    </p>
-                  </div>
-                  <div className="space-y-4">
-                    {analysis.speechSegments.map((segment, index) => (
-                      <motion.div 
-                        key={index} 
-                        className="border rounded-lg p-4"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: index * 0.1 }}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <span className="inline-block px-2 py-1 text-xs font-semibold rounded-full bg-primary/10 text-primary capitalize mb-2">
-                              {segment.type}
-                            </span>
-                            <p className="text-sm text-muted-foreground">
-                              {segment.startTime} - {segment.endTime}
-                            </p>
-                          </div>
-                          <div className={`text-lg font-bold ${getCoherenceColor(segment.coherenceScore)}`}>
-                            {segment.coherenceScore.toFixed(1)}/10
-                          </div>
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold">Coherence & Tone Analysis</h2>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-muted-foreground">
+                    {formatTime(currentTime)} / {formatTime(duration || analysis?.durationSeconds || 0)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={togglePlayPause}
+                    className="flex items-center gap-2"
+                  >
+                    {isPlaying ? (
+                      <Pause className="h-4 w-4" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                    {isPlaying ? "Pause" : "Play"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Horizontal Timeline */}
+              <div className="relative">
+                {/* Timeline track */}
+                <div
+                  className="relative h-2 bg-muted rounded-full cursor-pointer"
+                  onClick={handleTimelineClick}
+                >
+                  {/* Progress bar */}
+                  <div
+                    className="absolute top-0 left-0 h-full bg-gray-300 rounded-full transition-all duration-200"
+                    style={{ width: `${(duration || analysis?.durationSeconds || 0) > 0 ? (currentTime / (duration || analysis?.durationSeconds || 1)) * 100 : 0}%` }}
+                  />
+                  
+                  {/* Segment markers */}
+                  {analysis.speechSegments.map((segment, index) => {
+                    // Parse start and end times (assuming format like "0:15" or "1:23")
+                    const parseTime = (timeStr: string) => {
+                      const [mins, secs] = timeStr.split(':').map(Number);
+                      return mins * 60 + secs;
+                    };
+                    
+                    const currentDuration = duration || analysis.durationSeconds || 0;
+                    const startTime = parseTime(segment.startTime);
+                    const endTime = parseTime(segment.endTime);
+                    const startPercent = currentDuration > 0 ? (startTime / currentDuration) * 100 : 0;
+                    const widthPercent = currentDuration > 0 ? ((endTime - startTime) / currentDuration) * 100 : 0;
+                    
+                    const getSegmentColor = (type: string) => {
+                      switch (type) {
+                        case "introduction":
+                          return "bg-blue-500";
+                        case "body":
+                          return "bg-green-500";
+                        case "transition":
+                          return "bg-yellow-500";
+                        case "conclusion":
+                          return "bg-purple-500";
+                        default:
+                          return "bg-gray-500";
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={index}
+                        className={`absolute top-0 h-full rounded-full opacity-80 ${getSegmentColor(segment.type)} cursor-pointer hover:opacity-100 transition-opacity`}
+                        style={{
+                          left: `${startPercent}%`,
+                          width: `${Math.max(widthPercent, 0.5)}%`, // Minimum width for visibility
+                        }}
+                        title={`${segment.type}: ${segment.startTime} - ${segment.endTime} (Click to jump)`}
+                        onClick={(e) => {
+                          e.stopPropagation(); // Prevent timeline click
+                          jumpToSegment(segment);
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+                
+                {/* Time markers */}
+                <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                  <span>0:00</span>
+                  <span>{formatTime(duration || analysis?.durationSeconds || 0)}</span>
+                </div>
+              </div>
+
+              {/* Coherence Segment Details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {analysis.speechSegments.map((segment, index) => {
+                  const getSegmentColor = (type: string) => {
+                    switch (type) {
+                      case "introduction":
+                        return "border-blue-200 bg-blue-50/50";
+                      case "body":
+                        return "border-green-200 bg-green-50/50";
+                      case "transition":
+                        return "border-yellow-200 bg-yellow-50/50";
+                      case "conclusion":
+                        return "border-purple-200 bg-purple-50/50";
+                      default:
+                        return "border-gray-200 bg-gray-50/50";
+                    }
+                  };
+
+                  return (
+                    <motion.div
+                      key={index}
+                      className={`border rounded-lg p-4 ${getSegmentColor(segment.type)} cursor-pointer hover:shadow-md transition-shadow`}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: index * 0.1 }}
+                      onClick={() => jumpToSegment(segment)}
+                      title="Click to jump to this segment"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <span className="inline-block px-2 py-1 text-xs font-semibold rounded-full bg-primary/10 text-primary capitalize mb-2">
+                            {segment.type}
+                          </span>
+                          <p className="text-sm text-muted-foreground font-mono">
+                            {segment.startTime} - {segment.endTime}
+                          </p>
                         </div>
-                        <p className="text-sm">{segment.content}</p>
-                      </motion.div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+                        <div className={`text-lg font-bold ${getCoherenceColor(segment.coherenceScore)}`}>
+                          {segment.coherenceScore.toFixed(1)}/10
+                        </div>
+                      </div>
+                      <p className="text-sm leading-relaxed">{segment.content}</p>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
           {activeTab === "pauses" && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle>Pause & Gap Analysis</CardTitle>
-                  <CardDescription>
-                    Average gap duration: {analysis.averageGapDuration.toFixed(2)}s
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {analysis.gaps.map((gap, index) => (
-                      <motion.div
-                        key={index}
-                        className={`border rounded-lg p-3 flex justify-between items-center ${getGapColor(gap.type)}`}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.4, delay: index * 0.05 }}
-                      >
-                        <div>
-                          <p className="font-semibold capitalize">{gap.type} pause</p>
-                          <p className="text-xs">{gap.timestamp}</p>
-                        </div>
-                        <span className="text-lg font-bold">{gap.duration.toFixed(2)}s</span>
-                      </motion.div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold">Pause & Gap Analysis</h2>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-muted-foreground">
+                    {formatTime(currentTime)} / {formatTime(duration || analysis?.durationSeconds || 0)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={togglePlayPause}
+                    className="flex items-center gap-2"
+                  >
+                    {isPlaying ? (
+                      <Pause className="h-4 w-4" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                    {isPlaying ? "Pause" : "Play"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Horizontal Timeline */}
+              <div className="relative">
+                {/* Timeline track */}
+                <div
+                  className="relative h-2 bg-muted rounded-full cursor-pointer"
+                  onClick={handleTimelineClick}
+                >
+                  {/* Progress bar */}
+                  <div
+                    className="absolute top-0 left-0 h-full bg-gray-300 rounded-full transition-all duration-200"
+                    style={{ width: `${(duration || analysis?.durationSeconds || 0) > 0 ? (currentTime / (duration || analysis?.durationSeconds || 1)) * 100 : 0}%` }}
+                  />
+
+                  {/* Pause markers */}
+                  {(() => {
+                    // Parse timestamp helper (assuming format like "0:15" or "1:23")
+                    const parseTime = (timeStr: string) => {
+                      const [mins, secs] = timeStr.split(':').map(Number);
+                      return mins * 60 + secs;
+                    };
+
+                    const playPauseSegment = (gap: GapAnalysis) => {
+                      if (audioRef.current) {
+                        const time = parseTime(gap.timestamp);
+                        audioRef.current.currentTime = time;
+                        setCurrentTime(time);
+                        setIsPlaying(true);
+                        audioRef.current.play();
+
+                        // Set up a timeout to pause after the gap duration
+                        setTimeout(() => {
+                          if (audioRef.current) {
+                            audioRef.current.pause();
+                            setIsPlaying(false);
+                          }
+                        }, gap.duration * 1000);
+                      }
+                    };
+
+                    return analysis.gaps.map((gap, index) => {
+                      const currentDuration = duration || analysis.durationSeconds || 0;
+                      const gapTime = parseTime(gap.timestamp);
+                      const gapPercent = currentDuration > 0 ? (gapTime / currentDuration) * 100 : 0;
+                      const gapWidthPercent = currentDuration > 0 ? (gap.duration / currentDuration) * 100 : 0;
+
+                      const getGapColor = (type: string) => {
+                        switch (type) {
+                          case "short":
+                            return "bg-green-500";
+                          case "medium":
+                            return "bg-blue-500";
+                          case "long":
+                            return "bg-yellow-500";
+                          case "excessive":
+                            return "bg-red-500";
+                          default:
+                            return "bg-gray-500";
+                        }
+                      };
+
+                      return (
+                        <div
+                          key={index}
+                          className={`absolute top-0 h-full rounded-full opacity-80 ${getGapColor(gap.type)} cursor-pointer hover:opacity-100 transition-opacity`}
+                          style={{
+                            left: `${gapPercent}%`,
+                            width: `${Math.max(gapWidthPercent, 0.5)}%`, // Minimum width for visibility
+                          }}
+                          title={`${gap.type} pause: ${gap.timestamp} (${gap.duration.toFixed(2)}s)`}
+                          onClick={(e) => {
+                            e.stopPropagation(); // Prevent timeline click
+                            playPauseSegment(gap);
+                          }}
+                        />
+                      );
+                    });
+                  })()}
+                </div>
+
+                {/* Time markers */}
+                <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                  <span>0:00</span>
+                  <span>{formatTime(duration || analysis?.durationSeconds || 0)}</span>
+                </div>
+              </div>
+
+              {/* Pause Details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(() => {
+                  // Parse timestamp helper (assuming format like "0:15" or "1:23")
+                  const parseTime = (timeStr: string) => {
+                    const [mins, secs] = timeStr.split(':').map(Number);
+                    return mins * 60 + secs;
+                  };
+
+                  const playPauseSegment = (gap: GapAnalysis) => {
+                    if (audioRef.current) {
+                      const time = parseTime(gap.timestamp);
+                      audioRef.current.currentTime = time;
+                      setCurrentTime(time);
+                      setIsPlaying(true);
+                      audioRef.current.play();
+
+                      // Set up a timeout to pause after the gap duration
+                      setTimeout(() => {
+                        if (audioRef.current) {
+                          audioRef.current.pause();
+                          setIsPlaying(false);
+                        }
+                      }, gap.duration * 1000);
+                    }
+                  };
+
+                  return analysis.gaps.map((gap, index) => (
+                    <motion.div
+                      key={index}
+                      className={`border rounded-lg p-3 flex justify-between items-center ${getGapColor(gap.type)} cursor-pointer hover:shadow-md transition-shadow`}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.4, delay: index * 0.05 }}
+                      onClick={() => playPauseSegment(gap)}
+                      title="Click to play this pause segment"
+                    >
+                      <div>
+                        <p className="font-semibold capitalize">{gap.type} pause</p>
+                        <p className="text-xs">{gap.timestamp}</p>
+                      </div>
+                      <span className="text-lg font-bold">{gap.duration.toFixed(2)}s</span>
+                    </motion.div>
+                  ));
+                })()}
+              </div>
+            </div>
           )}
 
           {activeTab === "filler" && (
@@ -777,11 +1137,7 @@ export default function AudioAnalysisPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Filler Words Analysis</CardTitle>
-                  <CardDescription>
-                    {analysis.totalFillerWords > 0
-                      ? `Detected ${analysis.totalFillerWords} filler words throughout the speech`
-                      : "No filler words detected in your speech"}
-                  </CardDescription>
+
                 </CardHeader>
                 <CardContent>
                   {analysis.totalFillerWords === 0 ? (
@@ -799,21 +1155,43 @@ export default function AudioAnalysisPage() {
                     </motion.div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {analysis.fillerWords.map((filler, index) => (
-                        <motion.div 
-                          key={index} 
-                          className="border rounded-lg p-3 flex justify-between items-center"
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.3, delay: index * 0.05 }}
-                        >
-                          <div>
-                            <p className="font-semibold">"{filler.word}"</p>
-                            <p className="text-xs text-muted-foreground">{filler.timestamp}</p>
-                          </div>
-                          <span className="text-lg font-bold text-muted-foreground">×{filler.count}</span>
-                        </motion.div>
-                      ))}
+                      {analysis.fillerWords.map((filler, index) => {
+                        // Parse timestamp (assuming format like "0:15" or "1:23")
+                        const parseTime = (timeStr: string) => {
+                          const [mins, secs] = timeStr.split(':').map(Number);
+                          return mins * 60 + secs;
+                        };
+
+                        const jumpToFiller = () => {
+                          if (audioRef.current) {
+                            const time = parseTime(filler.timestamp);
+                            audioRef.current.currentTime = time;
+                            setCurrentTime(time);
+                            if (!isPlaying) {
+                              setIsPlaying(true);
+                              audioRef.current.play();
+                            }
+                          }
+                        };
+
+                        return (
+                          <motion.div 
+                            key={index} 
+                            className="border rounded-lg p-3 flex justify-between items-center cursor-pointer hover:shadow-md transition-shadow"
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.3, delay: index * 0.05 }}
+                            onClick={jumpToFiller}
+                            title="Click to jump to this filler word"
+                          >
+                            <div>
+                              <p className="font-semibold">"{filler.word}"</p>
+                              <p className="text-xs text-muted-foreground">{filler.timestamp}</p>
+                            </div>
+                            <span className="text-lg font-bold text-muted-foreground">×{filler.count}</span>
+                          </motion.div>
+                        );
+                      })}
                     </div>
                   )}
                 </CardContent>
@@ -830,7 +1208,7 @@ export default function AudioAnalysisPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Transcript</CardTitle>
-                  <CardDescription>Complete transcription of your audio</CardDescription>
+
                 </CardHeader>
                 <CardContent>
                   <div className="p-4 bg-muted rounded-lg max-h-96 overflow-y-auto">

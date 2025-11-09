@@ -290,7 +290,7 @@ export default function Dashboard() {
                     </Button>
                   </motion.div>
                 </DialogTrigger>
-                <DialogContent asChild>
+                <DialogContent>
                   <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -597,14 +597,14 @@ export default function Dashboard() {
               </motion.div>
             )}
             <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-              <DialogContent asChild>
+              <DialogContent>
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
                 >
-                <DialogHeader>
+                <DialogHeader className="mb-4">
                   <DialogTitle>Edit Project</DialogTitle>
                   <DialogDescription>
                     Update the details for your project.
@@ -758,7 +758,7 @@ export default function Dashboard() {
               open={isDeleteConfirmOpen}
               onOpenChange={setIsDeleteConfirmOpen}
             >
-              <DialogContent asChild>
+              <DialogContent>
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}

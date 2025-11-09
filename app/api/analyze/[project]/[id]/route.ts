@@ -13,7 +13,6 @@ const ai = new GoogleGenAI({
 const FillerWordSchema = z.object({
   word: z.string().describe("The filler word detected (e.g., 'um', 'uh', 'like')"),
   timestamp: z.string().describe("Timestamp in format MM:SS when the filler word occurs"),
-  count: z.number().describe("Number of times this filler word appears at this timestamp"),
 });
 
 const GapAnalysisSchema = z.object({
@@ -134,14 +133,14 @@ Please analyze the following aspects:
 
 3. **Words Per Minute (WPM)**: Calculate speaking rate as: (total words / duration in minutes).
 
-4. **Filler Words**: Identify ALL filler words like "um", "uh", "like", "you know", "so", "actually", "basically", "literally", etc. Provide timestamps (MM:SS format) and count for each occurrence.
+4. **Filler Words**: Identify ALL filler words like "um", "uh", "like", "you know", "so", "actually", "basically", "literally", etc. For each individual occurrence of a filler word, provide the word and its timestamp (MM:SS format). Create a new entry for every single filler word spoken.
 
-5. **Gap Analysis**: Identify pauses/gaps in speech:
-   - Short gaps: 0.5-1 second (natural pauses)
-   - Medium gaps: 1-2 seconds (thoughtful pauses)
-   - Long gaps: 2-4 seconds (hesitation)
-   - Excessive gaps: 4+ seconds (concerning pauses)
-   Provide timestamp and duration for each gap.
+5. **Gap Analysis**: Identify pauses/gaps in speech. Ignore natural pauses under 1 second.
+   - Short gaps: 1-2 seconds (thoughtful pauses)
+   - Medium gaps: 2-4 seconds (hesitation)
+   - Long gaps: 4-7 seconds (concerning pauses)
+   - Excessive gaps: 7+ seconds (major disruption)
+   Provide timestamp and duration for each detected gap.
 
 6. **Speech Segmentation**: Break down the speech into logical segments (introduction, body, conclusion, transitions). Provide start/end timestamps and a brief content summary for each segment. Rate each segment's coherence (0-10).
 
@@ -186,9 +185,8 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
             properties: {
               word: { type: "string", description: "The filler word detected" },
               timestamp: { type: "string", description: "Timestamp in format MM:SS" },
-              count: { type: "number", description: "Number of times this filler word appears" },
             },
-            required: ["word", "timestamp", "count"],
+            required: ["word", "timestamp"],
           },
         },
         totalFillerWords: { type: "number", description: "Total count of all filler words" },

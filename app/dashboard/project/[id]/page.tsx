@@ -19,13 +19,21 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Loader2, Edit, Trash2, AlertTriangle, Upload, Info, BarChart3, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Project {
   id: string;
@@ -252,13 +260,30 @@ export default function ProjectPage() {
       const data = await res.json() as { error?: string; success?: boolean; upload?: any };
       
       if (res.ok) {
+        // preserve the selected file name before we clear it
+        const uploadedFileName = selectedFile?.name || "Upload";
         setSelectedFile(null);
         // Reset file input
         const fileInput = document.getElementById("audio-file") as HTMLInputElement;
         if (fileInput) fileInput.value = "";
         setErrorMessage("");
         setIsUploadModalOpen(false);
-        fetchAudioUploads(); // Refresh the list
+
+        // If API returned the created upload object, normalize it and insert immediately.
+        if (data.upload) {
+          const normalized = {
+            id: data.upload.id || `temp-${Date.now()}`,
+            fileName: data.upload.fileName || uploadedFileName,
+            createdAt: data.upload.createdAt || new Date().toISOString(),
+          } as AudioUpload;
+
+          // Ensure we don't duplicate an existing item with the same id
+          setAudioUploads(prev => [normalized, ...prev.filter(u => u.id !== normalized.id)]);
+          setIsLoadingUploads(false);
+        } else {
+          // Fallback: refetch the uploads list to ensure consistency
+          await fetchAudioUploads();
+        }
       } else {
         setErrorMessage(data.error || "Failed to upload file");
       }
@@ -461,7 +486,7 @@ export default function ProjectPage() {
                           </div>
                           <div>
                             <Label htmlFor="edit-vibe" className="mb-2 flex items-center gap-2">
-                              Vibe (optional)
+                              Vibe
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
@@ -473,25 +498,30 @@ export default function ProjectPage() {
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  Set the style—playful, cinematic, neutral, etc.
+                                  Select the tone you want for the narration.
                                 </TooltipContent>
                               </Tooltip>
                             </Label>
-                            <Input
-                              id="edit-vibe"
-                              value={editVibe}
-                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditVibe(e.target.value)}
-                              placeholder="Playful, authoritative, warm..."
-                            />
+                            <Select value={editVibe} onValueChange={setEditVibe}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a vibe..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Playful">Playful</SelectItem>
+                                <SelectItem value="Authoritative">Authoritative</SelectItem>
+                                <SelectItem value="Warm">Warm</SelectItem>
+                                <SelectItem value="Professional">Professional</SelectItem>
+                                <SelectItem value="Dramatic">Dramatic</SelectItem>
+                                <SelectItem value="Neutral">Neutral</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                           <div className="space-y-1.5">
                             <div className="flex items-center gap-2">
-                              <input
+                              <Checkbox
                                 id="edit-strict"
-                                type="checkbox"
-                                className="h-4 w-4 rounded border border-input"
                                 checked={editStrictMode}
-                                onChange={(e) => setEditStrictMode(e.target.checked)}
+                                onCheckedChange={(checked) => setEditStrictMode(checked === true)}
                               />
                               <Label htmlFor="edit-strict" className="flex items-center gap-2">
                                 Strict mode
@@ -732,81 +762,64 @@ export default function ProjectPage() {
                     No audio files yet. Upload your first audio file!
                   </motion.p>
                 ) : (
-                  <motion.div
-                    className="space-y-3"
-                    initial="hidden"
-                    animate="visible"
-                    variants={{
-                      hidden: { opacity: 0 },
-                      visible: {
-                        opacity: 1,
-                        transition: {
-                          staggerChildren: 0.1
-                        }
-                      }
-                    }}
-                  >
-                    {audioUploads.map((upload) => (
-                      <motion.div
-                        key={upload.id}
-                        variants={{
-                          hidden: { opacity: 0, y: 20 },
-                          visible: {
-                            opacity: 1,
-                            y: 0,
-                            transition: {
-                              duration: 0.3,
-                              ease: "easeOut"
-                            }
-                          }
-                        }}
-                      >
-                        <Card>
-                          <CardContent>
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <h4 className="font-semibold">{upload.fileName}</h4>
-                                <p className="text-xs text-muted-foreground mt-2">
-                                  Uploaded: {new Date(upload.createdAt).toLocaleDateString()}
-                                </p>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <Link href={`/dashboard/project/${projectId}/analyze/${upload.id}`}>
+                  <div className="space-y-3">
+                    <AnimatePresence initial={false} mode="popLayout">
+                      {audioUploads.map((upload) => (
+                        <motion.div
+                          key={upload.id}
+                          layout
+                          initial={{ opacity: 0, y: 12, scale: 0.995 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                          transition={{ duration: 0.28, ease: "easeOut" }}
+                        >
+                          <Card>
+                            <CardContent>
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <h4 className="font-semibold">{upload.fileName}</h4>
+                                  <p className="text-xs text-muted-foreground mt-2">
+                                    Uploaded: {new Date(upload.createdAt).toLocaleDateString()}
+                                  </p>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Link href={`/dashboard/project/${projectId}/analyze/${upload.id}`}>
+                                    <motion.div
+                                      whileHover={{ scale: 1.05 }}
+                                      whileTap={{ scale: 0.95 }}
+                                    >
+                                      <Button
+                                        variant="default"
+                                        size="sm"
+                                      >
+                                        <BarChart3 className="h-4 w-4 mr-2" />
+                                        Analyze
+                                      </Button>
+                                    </motion.div>
+                                  </Link>
                                   <motion.div
                                     whileHover={{ scale: 1.05 }}
                                     whileTap={{ scale: 0.95 }}
                                   >
                                     <Button
-                                      variant="default"
+                                      variant="outline"
                                       size="sm"
+                                      onClick={() => {
+                                        setSelectedUploadToDelete(upload);
+                                        setIsDeleteUploadDialogOpen(true);
+                                      }}
                                     >
-                                      <BarChart3 className="h-4 w-4 mr-2" />
-                                      Analyze
+                                      <Trash2 className="h-4 w-4" />
                                     </Button>
                                   </motion.div>
-                                </Link>
-                                <motion.div
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
-                                >
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedUploadToDelete(upload);
-                                      setIsDeleteUploadDialogOpen(true);
-                                    }}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </motion.div>
+                                </div>
                               </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </motion.div>
-                    ))}
-                  </motion.div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
                 )}
               </CardContent>
             </Card>
