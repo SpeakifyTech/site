@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { PrismaClient } from "@/generated/prisma/client";
+import { PrismaClient, Prisma } from "@/generated/prisma/client";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 
@@ -9,14 +9,33 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-// Define Project type
-interface Project {
+// Define Project type for server-side calculations
+interface AnalysisProject {
   id: string;
   name: string;
-  description: string | null;
-  vibe: string | null;
-  strict: boolean;
   timeframe: number;
+}
+
+interface PerformanceFactorScores extends Prisma.JsonObject {
+  time: number;
+  coherence: number;
+  filler: number;
+  pauses: number;
+}
+
+interface PerformanceDetails extends Prisma.JsonObject {
+  timeGoalSeconds: number | null;
+  timeDeltaSeconds: number | null;
+  fillerPercentage: number;
+  longPauseCount: number;
+  wordsPerMinute: number;
+  averageGapDuration: number;
+}
+
+interface PerformanceMetrics extends Prisma.JsonObject {
+  overallGrade: number;
+  factorScores: PerformanceFactorScores;
+  details: PerformanceDetails;
 }
 
 // Define the structured output schema using Zod
@@ -75,132 +94,73 @@ const AudioAnalysisSchema = z.object({
   suggestions: z.array(z.string()).describe("General suggestions for improving the speech"),
 });
 
-// Server-side performance calculation functions
-interface PerformanceFactorScores {
-  time: number;
-  coherence: number;
-  filler: number;
-  pauses: number;
-}
-
-interface PerformanceDetails {
-  timeGoalSeconds: number | null;
-  timeDeltaSeconds: number | null;
-  fillerPercentage: number;
-  longPauseCount: number;
-  wordsPerMinute: number;
-  averageGapDuration: number;
-}
-
-interface PerformanceMetrics {
-  overallGrade: number;
-  factorScores: PerformanceFactorScores;
-  details: PerformanceDetails;
-}
-
-const getProjectTimeframeSeconds = (project: Project): number | null => {
-  if (!project?.timeframe || project.timeframe <= 0) {
-    return null;
-  }
-  return project.timeframe / 1000;
+const getProjectTimeframeSeconds = (
+  project: AnalysisProject | null
+): number | null => {
+  if (!project?.timeframe || project.timeframe <= 0) return null;
+  return project.timeframe / 1000; // stored in ms
 };
 
-function calculateOverallGrade(analysis: any, project: Project): number {
-  if (!analysis || !project) return 0;
-
+const calculateFactorScores = (
+  analysis: any,
+  project: AnalysisProject | null
+): PerformanceFactorScores => {
   const timeframeSeconds = getProjectTimeframeSeconds(project);
-
-  // Time accuracy score (0-100)
   let timeScore = 100;
   if (typeof timeframeSeconds === "number" && timeframeSeconds > 0) {
-    const timeDiff = Math.abs(analysis.durationSeconds - timeframeSeconds);
-    const maxDiff = Math.max(timeframeSeconds * 0.2, 1); // 20% tolerance
+    const timeDiff = Math.abs((analysis.durationSeconds || 0) - timeframeSeconds);
+    const maxDiff = Math.max(timeframeSeconds * 0.2, 1);
     timeScore = Math.max(0, 100 - (timeDiff / maxDiff) * 100);
   }
 
-  // Coherence score (0-100) - using as proxy for tone
   const coherenceScore = ((analysis.overallCoherenceScore ?? 0) / 10) * 100;
-
-  // Filler words score (0-100) - lower filler % is better
   const fillerPercentage =
     analysis.wordCount > 0
       ? (analysis.totalFillerWords / analysis.wordCount) * 100
       : 0;
-  const fillerScore = Math.max(0, 100 - fillerPercentage * 5); // 5% filler = 75% score, etc.
-
-  // Long pauses score (0-100) - fewer long pauses is better
-  const longPauses = Array.isArray(analysis.gaps)
-    ? analysis.gaps.filter(
-        (g: any) => g.type === "long" || g.type === "excessive"
-      ).length
-    : 0;
-  const pauseScore = Math.max(0, 100 - longPauses * 10); // 10 long pauses = 0% score
-
-  // Average the scores
-  const totalScore =
-    (timeScore + coherenceScore + fillerScore + pauseScore) / 4;
-  return Math.round(totalScore);
-}
-
-function calculateFactorScores(
-  analysis: any,
-  project: Project
-): PerformanceFactorScores {
-  const timeframeSeconds = getProjectTimeframeSeconds(project);
-
-  // Time accuracy score (0-100)
-  let timeScore = 100;
-  if (typeof timeframeSeconds === "number" && timeframeSeconds > 0) {
-    const timeDiff = Math.abs(analysis.durationSeconds - timeframeSeconds);
-    const maxDiff = Math.max(timeframeSeconds * 0.2, 1); // 20% tolerance
-    timeScore = Math.max(0, 100 - (timeDiff / maxDiff) * 100);
-  }
-
-  // Coherence score (0-100) - using as proxy for tone
-  const coherenceScore = ((analysis.overallCoherenceScore ?? 0) / 10) * 100;
-
-  // Filler words score (0-100) - lower filler % is better
-  const fillerPercentage =
-    analysis.wordCount > 0
-      ? (analysis.totalFillerWords / analysis.wordCount) * 100
-      : 0;
-  const fillerScore = Math.max(0, 100 - fillerPercentage * 5); // 5% filler = 75% score, etc.
-
-  // Long pauses score (0-100) - fewer long pauses is better
-  const longPauses = Array.isArray(analysis.gaps)
-    ? analysis.gaps.filter(
-        (g: any) => g.type === "long" || g.type === "excessive"
-      ).length
-    : 0;
-  const pauseScore = Math.max(0, 100 - longPauses * 10); // 10 long pauses = 0% score
-
-  return {
-    time: Math.round(timeScore),
-    coherence: Math.round(coherenceScore),
-    filler: Math.round(fillerScore),
-    pauses: Math.round(pauseScore),
-  };
-}
-
-function buildPerformanceMetrics(
-  analysis: any,
-  project: Project
-): PerformanceMetrics {
-  const fillerPercentage =
-    analysis.wordCount > 0
-      ? (analysis.totalFillerWords / analysis.wordCount) * 100
-      : 0;
-
+  const fillerScore = Math.max(0, 100 - fillerPercentage * 5);
   const longPauseCount = Array.isArray(analysis.gaps)
     ? analysis.gaps.filter(
         (g: any) => g.type === "long" || g.type === "excessive"
       ).length
     : 0;
+  const pauseScore = Math.max(0, 100 - longPauseCount * 10);
 
+  return {
+    time: Math.round(timeScore),
+    coherence: Math.round(Math.max(0, Math.min(100, coherenceScore))),
+    filler: Math.round(Math.max(0, Math.min(100, fillerScore))),
+    pauses: Math.round(Math.max(0, Math.min(100, pauseScore))),
+  };
+};
+
+const calculateOverallGrade = (
+  analysis: any,
+  project: AnalysisProject | null
+): number => {
+  const scores = calculateFactorScores(analysis, project);
+  const total =
+    scores.time + scores.coherence + scores.filler + scores.pauses;
+  return Math.round(total / 4);
+};
+
+const buildPerformanceMetrics = (
+  analysis: any,
+  project: AnalysisProject | null
+): PerformanceMetrics => {
+  const fillerPercentage =
+    analysis.wordCount > 0
+      ? (analysis.totalFillerWords / analysis.wordCount) * 100
+      : 0;
+  const longPauseCount = Array.isArray(analysis.gaps)
+    ? analysis.gaps.filter(
+        (g: any) => g.type === "long" || g.type === "excessive"
+      ).length
+    : 0;
   const timeGoalSeconds = getProjectTimeframeSeconds(project);
   const timeDeltaSeconds =
     typeof timeGoalSeconds === "number"
-      ? analysis.durationSeconds - timeGoalSeconds
+      ? (analysis.durationSeconds || 0) - timeGoalSeconds
       : null;
 
   return {
@@ -215,7 +175,7 @@ function buildPerformanceMetrics(
       averageGapDuration: analysis.averageGapDuration ?? 0,
     },
   };
-}
+};
 
 export async function GET(
   request: NextRequest,
@@ -241,19 +201,21 @@ export async function GET(
       return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
     }
 
-    // Fetch project and verify the upload exists
-    console.log("Checking project and upload in database...");
-    const project = await prisma.project.findFirst({
+    // Fetch project to drive performance calculations and validate ownership
+    console.log("Checking project in database...");
+    const project = (await prisma.project.findFirst({
       where: {
         id: projectId,
         userId: session.user.id,
       },
-    });
-    
+    })) as AnalysisProject | null;
+
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
+    // Verify the upload exists and belongs to the user and project
+    console.log("Checking upload in database...");
     const upload = await prisma.audioUpload.findFirst({
       where: {
         id: id,
@@ -264,11 +226,11 @@ export async function GET(
         analysis: true,
       },
     });
-    console.log("Project and upload found:", { 
-      projectName: project.name, 
-      uploadExists: !!upload, 
-      fileName: upload?.fileName, 
-      hasAnalysis: !!upload?.analysis 
+    console.log("Upload found:", {
+      exists: !!upload,
+      fileName: upload?.fileName,
+      hasAnalysis: !!upload?.analysis,
+      projectName: project.name,
     });
 
     if (!upload) {
@@ -278,8 +240,6 @@ export async function GET(
     // Check if analysis already exists and this is not a retry
     if (upload.analysis && !isRetry) {
       console.log("Returning cached analysis");
-      
-      // Reconstruct analysis data for calculations
       const cachedAnalysis = {
         transcript: upload.analysis.transcript,
         durationSeconds: upload.analysis.durationSeconds,
@@ -296,7 +256,8 @@ export async function GET(
         suggestions: upload.analysis.suggestions,
       };
 
-      let performance = (upload.analysis.performance as PerformanceMetrics) || null;
+      let performance =
+        (upload.analysis.performance as PerformanceMetrics | null) ?? null;
       if (!performance) {
         performance = buildPerformanceMetrics(cachedAnalysis, project);
         await prisma.audioAnalysis.update({
@@ -565,7 +526,7 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
       console.log("Analysis saved to database");
     }
 
-    // Return the structured analysis with calculated performance metrics
+    // Return the structured analysis
     return NextResponse.json({
       success: true,
       uploadId: upload.id,
