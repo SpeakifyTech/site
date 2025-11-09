@@ -59,22 +59,6 @@ interface TimestampedSegment {
   text: string;
 }
 
-interface PerformanceFactor {
-  label: string;
-  score: number;
-  description: string;
-}
-
-interface PerformanceMetrics {
-  overallGrade: number;
-  factorScores: {
-    time: number;
-    coherence: number;
-    filler: number;
-    pauses: number;
-  };
-}
-
 interface AudioAnalysis {
   transcript: string;
   durationSeconds: number;
@@ -90,7 +74,6 @@ interface AudioAnalysis {
   timestampedTranscript?: TimestampedSegment[];
   overallCoherenceScore: number;
   suggestions: string[];
-  performance?: PerformanceMetrics;
 }
 
 interface Project {
