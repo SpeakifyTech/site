@@ -297,7 +297,7 @@ export default function Dashboard() {
                     exit={{ opacity: 0, scale: 0.9 }}
                     transition={{ duration: 0.2, ease: "easeOut" }}
                   >
-                  <DialogHeader>
+                  <DialogHeader className="mb-4">
                     <DialogTitle>Create New Project</DialogTitle>
                     <DialogDescription>
                       Enter the details for your new project.

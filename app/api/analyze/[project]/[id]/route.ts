@@ -1,10 +1,14 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { PrismaClient, Prisma } from "@/generated/prisma/client";
+import { getCollection } from "@/lib/db";
+import { AudioAnalysisDocument, AudioUploadDocument, PerformanceFactorScores, PerformanceMetrics, ProjectDocument } from "@/lib/types/models";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 
-const prisma = new PrismaClient();
+const projectsCollectionPromise = getCollection<ProjectDocument>("project");
+const uploadsCollectionPromise = getCollection<AudioUploadDocument>("audioUpload");
+const analysisCollectionPromise = getCollection<AudioAnalysisDocument>("audioAnalysis");
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
@@ -14,28 +18,6 @@ interface AnalysisProject {
   id: string;
   name: string;
   timeframe: number;
-}
-
-interface PerformanceFactorScores extends Prisma.JsonObject {
-  time: number;
-  coherence: number;
-  filler: number;
-  pauses: number;
-}
-
-interface PerformanceDetails extends Prisma.JsonObject {
-  timeGoalSeconds: number | null;
-  timeDeltaSeconds: number | null;
-  fillerPercentage: number;
-  longPauseCount: number;
-  wordsPerMinute: number;
-  averageGapDuration: number;
-}
-
-interface PerformanceMetrics extends Prisma.JsonObject {
-  overallGrade: number;
-  factorScores: PerformanceFactorScores;
-  details: PerformanceDetails;
 }
 
 // Define the structured output schema using Zod
@@ -201,35 +183,41 @@ export async function GET(
       return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
     }
 
-    // Fetch project to drive performance calculations and validate ownership
     console.log("Checking project in database...");
-    const project = (await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: session.user.id,
-      },
-    })) as AnalysisProject | null;
+    const projectsCollection = await projectsCollectionPromise;
+    const projectDoc = await projectsCollection.findOne({
+      _id: projectId,
+      userId: session.user.id,
+    });
 
-    if (!project) {
+    if (!projectDoc) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
+    const project: AnalysisProject = {
+      id: projectDoc._id,
+      name: projectDoc.name,
+      timeframe: projectDoc.timeframe,
+    };
+
     // Verify the upload exists and belongs to the user and project
     console.log("Checking upload in database...");
-    const upload = await prisma.audioUpload.findFirst({
-      where: {
-        id: id,
-        userId: session.user.id,
-        projectId: projectId,
-      },
-      include: {
-        analysis: true,
-      },
+    const uploadsCollection = await uploadsCollectionPromise;
+    const upload = await uploadsCollection.findOne({
+      _id: id,
+      userId: session.user.id,
+      projectId,
     });
+
+    const analysisCollection = await analysisCollectionPromise;
+    const analysisDoc = upload
+      ? await analysisCollection.findOne({ uploadId: upload._id })
+      : null;
+
     console.log("Upload found:", {
       exists: !!upload,
       fileName: upload?.fileName,
-      hasAnalysis: !!upload?.analysis,
+      hasAnalysis: !!analysisDoc,
       projectName: project.name,
     });
 
@@ -238,37 +226,36 @@ export async function GET(
     }
 
     // Check if analysis already exists and this is not a retry
-    if (upload.analysis && !isRetry) {
+    if (analysisDoc && !isRetry) {
       console.log("Returning cached analysis");
       const cachedAnalysis = {
-        transcript: upload.analysis.transcript,
-        durationSeconds: upload.analysis.durationSeconds,
-        wordCount: upload.analysis.wordCount,
-        wpm: upload.analysis.wpm,
-        fillerWords: upload.analysis.fillerWords,
-        totalFillerWords: upload.analysis.totalFillerWords,
-        gaps: upload.analysis.gaps,
-        averageGapDuration: upload.analysis.averageGapDuration,
-        speechSegments: upload.analysis.speechSegments,
-        coherenceIssues: upload.analysis.sentenceIssues,
-        timestampedTranscript: upload.analysis.timestampedTranscript,
-        overallCoherenceScore: upload.analysis.overallCoherenceScore,
-        suggestions: upload.analysis.suggestions,
+        transcript: analysisDoc.transcript,
+        durationSeconds: analysisDoc.durationSeconds,
+        wordCount: analysisDoc.wordCount,
+        wpm: analysisDoc.wpm,
+        fillerWords: analysisDoc.fillerWords,
+        totalFillerWords: analysisDoc.totalFillerWords,
+        gaps: analysisDoc.gaps,
+        averageGapDuration: analysisDoc.averageGapDuration,
+        speechSegments: analysisDoc.speechSegments,
+        coherenceIssues: analysisDoc.sentenceIssues,
+        timestampedTranscript: analysisDoc.timestampedTranscript,
+        overallCoherenceScore: analysisDoc.overallCoherenceScore,
+        suggestions: analysisDoc.suggestions,
       };
 
-      let performance =
-        (upload.analysis.performance as PerformanceMetrics | null) ?? null;
+      let performance = analysisDoc.performance ?? null;
       if (!performance) {
         performance = buildPerformanceMetrics(cachedAnalysis, project);
-        await prisma.audioAnalysis.update({
-          where: { uploadId: upload.id },
-          data: { performance },
-        });
+        await analysisCollection.updateOne(
+          { uploadId: upload._id },
+          { $set: { performance, updatedAt: new Date() } },
+        );
       }
 
       return NextResponse.json({
         success: true,
-        uploadId: upload.id,
+        uploadId: upload._id,
         fileName: upload.fileName,
         analysis: {
           ...cachedAnalysis,
@@ -476,9 +463,8 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
     console.log("Analysis parsed successfully");
     const performanceMetrics = buildPerformanceMetrics(analysisData, project);
 
-    // Save analysis to database
     console.log("Saving analysis to database...");
-    if (upload.analysis && isRetry) {
+    if (analysisDoc && isRetry) {
       // Update existing analysis
       const updateData = {
         transcript: analysisData.transcript,
@@ -494,18 +480,20 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
         overallCoherenceScore: analysisData.overallCoherenceScore,
         suggestions: analysisData.suggestions,
         performance: performanceMetrics,
+        updatedAt: new Date(),
         ...(analysisData.timestampedTranscript ? { timestampedTranscript: analysisData.timestampedTranscript } : {}),
       };
 
-      await prisma.audioAnalysis.update({
-        where: { uploadId: upload.id },
-        data: updateData,
-      });
+      await analysisCollection.updateOne(
+        { uploadId: upload._id },
+        { $set: updateData },
+      );
       console.log("Analysis updated in database");
     } else {
       // Create new analysis
-      const createData = {
-        uploadId: upload.id,
+      const createData: AudioAnalysisDocument = {
+        _id: randomUUID(),
+        uploadId: upload._id,
         transcript: analysisData.transcript,
         durationSeconds: analysisData.durationSeconds,
         wordCount: analysisData.wordCount,
@@ -519,17 +507,19 @@ Analyze the audio thoroughly and provide all requested metrics with timestamps i
         overallCoherenceScore: analysisData.overallCoherenceScore,
         suggestions: analysisData.suggestions,
         performance: performanceMetrics,
+        createdAt: new Date(),
+        updatedAt: new Date(),
         ...(analysisData.timestampedTranscript ? { timestampedTranscript: analysisData.timestampedTranscript } : {}),
       };
 
-      await prisma.audioAnalysis.create({ data: createData });
+      await analysisCollection.insertOne(createData);
       console.log("Analysis saved to database");
     }
 
     // Return the structured analysis
     return NextResponse.json({
       success: true,
-      uploadId: upload.id,
+      uploadId: upload._id,
       fileName: upload.fileName,
       analysis: {
         ...analysisData,

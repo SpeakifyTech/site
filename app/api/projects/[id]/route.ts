@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { PrismaClient } from "@/generated/prisma/client";
+import { getCollection } from "@/lib/db";
+import { ProjectDocument } from "@/lib/types/models";
 
-const prisma = new PrismaClient();
+const projectsCollectionPromise = getCollection<ProjectDocument>("project");
+
+const mapProject = (project: ProjectDocument) => ({
+  id: project._id,
+  name: project.name,
+  description: project.description,
+  vibe: project.vibe,
+  strict: project.strict,
+  timeframe: project.timeframe,
+  userId: project.userId,
+  createdAt: project.createdAt,
+  updatedAt: project.updatedAt,
+});
 
 export async function DELETE(
   request: NextRequest,
@@ -20,24 +33,15 @@ export async function DELETE(
 
     const { id: projectId } = await params;
 
-    // Check if project exists and belongs to user
-    const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: session.user.id,
-      },
+    const projectsCollection = await projectsCollectionPromise;
+    const result = await projectsCollection.deleteOne({
+      _id: projectId,
+      userId: session.user.id,
     });
 
-    if (!project) {
+    if (result.deletedCount === 0) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
-
-    // Delete the project
-    await prisma.project.delete({
-      where: {
-        id: projectId,
-      },
-    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -68,18 +72,6 @@ export async function PATCH(
       strict?: boolean;
       timeframe?: number | null;
     };
-
-    // Check if project exists and belongs to user
-    const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: session.user.id,
-      },
-    });
-
-    if (!project) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    }
 
     // Validate input
     if (
@@ -141,15 +133,22 @@ export async function PATCH(
       updateData.timeframe = body.timeframe ?? 0;
     }
 
-    // Update the project
-    const updatedProject = await prisma.project.update({
-      where: {
-        id: projectId,
-      },
-      data: updateData,
-    });
+    updateData.updatedAt = new Date();
 
-    return NextResponse.json({ success: true, project: updatedProject });
+    const projectsCollection = await projectsCollectionPromise;
+    const updateResult = await projectsCollection.findOneAndUpdate(
+      { _id: projectId, userId: session.user.id },
+      { $set: updateData },
+      { returnDocument: "after" },
+    );
+
+    const updatedProject = updateResult?.value ?? null;
+
+    if (!updatedProject) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, project: mapProject(updatedProject) });
   } catch (error) {
     console.error("Error updating project:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -172,19 +171,17 @@ export async function GET(
 
     const { id: projectId } = await params;
 
-    // Check if project exists and belongs to user
-    const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: session.user.id,
-      },
+    const projectsCollection = await projectsCollectionPromise;
+    const project = await projectsCollection.findOne({
+      _id: projectId,
+      userId: session.user.id,
     });
 
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ project });
+    return NextResponse.json({ project: mapProject(project) });
   } catch (error) {
     console.error("Error fetching project:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

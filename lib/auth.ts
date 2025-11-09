@@ -1,15 +1,17 @@
 import { betterAuth } from "better-auth";
-import { prismaAdapter } from "better-auth/adapters/prisma";
-import { PrismaClient } from "@/generated/prisma/client";
+import { mongodbAdapter } from "better-auth/adapters/mongodb";
+import { getDb, getMongoClient } from "@/lib/db";
 
-const prisma = new PrismaClient();
+const [db, client] = await Promise.all([getDb(), getMongoClient()]);
+
 export const auth = betterAuth({
   trustedOrigins: [
     "http://localhost:3000",
     "http://10.90.86.105:3000"
   ],
-  database: prismaAdapter(prisma, {
-    provider: "mongodb",
+  database: mongodbAdapter(db, {
+    client,
+    transaction: false,
   }),
   // ONLY WHILE USING LIVE SHARE
   cookie: {

@@ -1,8 +1,20 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { PrismaClient } from "@/generated/prisma/client";
+import { getCollection } from "@/lib/db";
+import { AudioUploadDocument } from "@/lib/types/models";
 
-const prisma = new PrismaClient();
+const uploadsCollectionPromise = getCollection<AudioUploadDocument>("audioUpload");
+
+const mapUpload = (upload: AudioUploadDocument) => ({
+  id: upload._id,
+  userId: upload.userId,
+  projectId: upload.projectId,
+  fileName: upload.fileName,
+  fileData: upload.fileData,
+  fileHash: upload.fileHash,
+  createdAt: upload.createdAt,
+});
 
 export async function GET(
   request: NextRequest,
@@ -19,17 +31,13 @@ export async function GET(
       return NextResponse.json({ error: "Project ID is required" }, { status: 400 });
     }
 
-    const uploads = await prisma.audioUpload.findMany({
-      where: {
-        userId: session.user.id,
-        projectId: projectId,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    const uploadsCollection = await uploadsCollectionPromise;
+    const uploads = await uploadsCollection
+      .find({ userId: session.user.id, projectId })
+      .sort({ createdAt: -1 })
+      .toArray();
 
-    return NextResponse.json({ uploads });
+    return NextResponse.json({ uploads: uploads.map(mapUpload) });
   } catch (error) {
     console.error("Error fetching uploads:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -72,12 +80,10 @@ export async function POST(
     const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
     const fileHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 
-    // Check duplicates for this user
-    const existingUpload = await prisma.audioUpload.findFirst({
-      where: {
-        userId: session.user.id,
-        fileHash: fileHash,
-      },
+    const uploadsCollection = await uploadsCollectionPromise;
+    const existingUpload = await uploadsCollection.findOne({
+      userId: session.user.id,
+      fileHash,
     });
     if (existingUpload) {
       return NextResponse.json({ error: "This file has already been uploaded" }, { status: 409 });
@@ -85,17 +91,19 @@ export async function POST(
 
     const base64Data = buffer.toString('base64');
 
-    const upload = await prisma.audioUpload.create({
-      data: {
-        userId: session.user.id,
-        projectId: projectId || null,
-        fileName: file.name,
-        fileData: base64Data,
-        fileHash: fileHash,
-      },
-    });
+    const upload: AudioUploadDocument = {
+      _id: randomUUID(),
+      userId: session.user.id,
+      projectId: projectId || null,
+      fileName: file.name,
+      fileData: base64Data,
+      fileHash,
+      createdAt: new Date(),
+    };
 
-    return NextResponse.json({ success: true, upload });
+    await uploadsCollection.insertOne(upload);
+
+    return NextResponse.json({ success: true, upload: mapUpload(upload) });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

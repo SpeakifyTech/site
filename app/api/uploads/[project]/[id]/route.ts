@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { PrismaClient } from "@/generated/prisma/client";
+import { getCollection } from "@/lib/db";
+import { AudioAnalysisDocument, AudioUploadDocument } from "@/lib/types/models";
 
-const prisma = new PrismaClient();
+const uploadsCollectionPromise = getCollection<AudioUploadDocument>("audioUpload");
+const analysisCollectionPromise = getCollection<AudioAnalysisDocument>("audioAnalysis");
 
 export async function GET(
   request: NextRequest,
@@ -19,13 +21,11 @@ export async function GET(
       return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
     }
 
-    // Verify the upload exists and belongs to the user and project
-    const upload = await prisma.audioUpload.findFirst({
-      where: {
-        id: id,
-        userId: session.user.id,
-        projectId: projectId,
-      },
+    const uploadsCollection = await uploadsCollectionPromise;
+    const upload = await uploadsCollection.findOne({
+      _id: id,
+      userId: session.user.id,
+      projectId,
     });
 
     if (!upload) {
@@ -79,20 +79,21 @@ export async function DELETE(
       return NextResponse.json({ error: "Missing parameters" }, { status: 400 });
     }
 
-    // Verify the upload exists and belongs to the user and project
-    const upload = await prisma.audioUpload.findFirst({
-      where: {
-        id: id,
-        userId: session.user.id,
-        projectId: projectId,
-      },
+    const uploadsCollection = await uploadsCollectionPromise;
+    const upload = await uploadsCollection.findOne({
+      _id: id,
+      userId: session.user.id,
+      projectId,
     });
 
     if (!upload) {
       return NextResponse.json({ error: "Upload not found" }, { status: 404 });
     }
 
-    await prisma.audioUpload.delete({ where: { id } });
+    await uploadsCollection.deleteOne({ _id: id });
+
+    const analysisCollection = await analysisCollectionPromise;
+    await analysisCollection.deleteOne({ uploadId: id });
 
     return NextResponse.json({ success: true });
   } catch (error) {
