@@ -3,11 +3,10 @@
 import * as React from "react"
 import { useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
-import {
-  Frame,
-  GalleryVerticalEnd,
-  SquareTerminal,
-} from "lucide-react"
+import { Frame, SquareTerminal } from "lucide-react"
+import Image from "next/image"
+import type { StaticImageData } from "next/image"
+import iconPng from "@/app/icon.png"
 
 import { authClient } from "@/lib/auth-client"
 import { NavMain } from "@/components/nav-main"
@@ -73,7 +72,14 @@ export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sideb
     teams: [
       {
         name: "Speakify",
-        logo: GalleryVerticalEnd,
+        logo: (props: { className?: string } & Omit<React.ComponentProps<typeof Image>, 'src' | 'alt' | 'width' | 'height'>) => {
+          const { className, ...rest } = props ?? {}
+          const width = (iconPng as StaticImageData)?.width ?? 32
+          const height = (iconPng as StaticImageData)?.height ?? 32
+          return (
+            <Image src={iconPng} alt="Speakify logo" className={className} width={width} height={height} {...rest} />
+          )
+        },
         plan: "Speak better. Fast.",
       },
     ],

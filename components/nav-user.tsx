@@ -102,6 +102,7 @@ export function NavUser({
                   <span className="truncate font-medium">{user.name}</span>
                   <span className="truncate text-xs">{user.email}</span>
                 </div>
+                <ModeToggle />
               </div>
             </DropdownMenuLabel>
             {/* <DropdownMenuSeparator />
@@ -127,10 +128,10 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup> */}
             <DropdownMenuSeparator />
-            <div className="p-2">
-              <ModeToggle />
+            {/* <div className="p-2">
+              
             </div>
-            <DropdownMenuSeparator />
+            <DropdownMenuSeparator /> */}
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut />
               Log out

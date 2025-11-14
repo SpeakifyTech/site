@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { PanelRightClose, PanelRightOpen } from "lucide-react"
-
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -15,7 +14,8 @@ export function TeamSwitcher({
 }: {
   teams: {
     name: string
-    logo: React.ElementType
+    // logo can be a component type (e.g. an ElementType) or a React node
+    logo: React.ElementType | React.ReactNode
     plan: string
   }[]
 }) {
@@ -37,14 +37,18 @@ export function TeamSwitcher({
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
-          <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg relative overflow-hidden">
+          <div className="text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg relative overflow-hidden">
             <div
               className={`absolute inset-0 flex items-center justify-center transition-opacity duration-500 ${state === "collapsed" && isHovered ? "opacity-0" : "opacity-100"}`}
             >
-              <activeTeam.logo className="size-4" />
+              {typeof activeTeam.logo === "function" ? (
+                React.createElement(activeTeam.logo as React.ElementType, { className: "size-8" })
+              ) : (
+                <div className="size-4 bg-sidebar-primary">{activeTeam.logo}</div>
+              )}
             </div>
             <div
-              className={`absolute inset-0 flex items-center justify-center transition-opacity duration-500 ${state === "collapsed" && isHovered ? "opacity-100" : "opacity-0"}`}
+              className={`absolute bg-sidebar-primary inset-0 flex items-center justify-center transition-opacity duration-500 ${state === "collapsed" && isHovered ? "opacity-100" : "opacity-0"}`}
             >
               <PanelRightClose className="h-4 w-4" />
             </div>
