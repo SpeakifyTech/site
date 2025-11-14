@@ -262,7 +262,13 @@ export default function Dashboard() {
           transition={{ duration: 0.4, delay: 0.2, ease: "easeOut" }}
           className="text-center py-8"
         >
-          <h1 className="text-3xl font-bold mb-2">Hello, {session.user.name.split(" ")[0]}!</h1>
+          <h1 className="text-3xl font-bold mb-2">
+            {(() => {
+              const hour = new Date().getHours();
+              const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+              return `${greet}, ${session.user.name.split(" ")[0]}!`;
+            })()}
+          </h1>
           <p className="text-muted-foreground">Open a project to begin.</p>
         </motion.div>
 
