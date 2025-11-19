@@ -136,13 +136,11 @@ export async function PATCH(
     updateData.updatedAt = new Date();
 
     const projectsCollection = await projectsCollectionPromise;
-    const updateResult = await projectsCollection.findOneAndUpdate(
+    const updatedProject = await projectsCollection.findOneAndUpdate(
       { _id: projectId, userId: session.user.id },
       { $set: updateData },
       { returnDocument: "after" },
     );
-
-    const updatedProject = updateResult?.value ?? null;
 
     if (!updatedProject) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
