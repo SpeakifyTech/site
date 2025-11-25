@@ -80,7 +80,7 @@ export function AppSidebar({ user, ...props }: React.ComponentProps<typeof Sideb
             <Image src={iconPng} alt="Speakify logo" className={className} width={width} height={height} {...rest} />
           )
         },
-        plan: "Speak better. Fast.",
+        plan: "Your voice starts here.",
       },
     ],
     navMain: [
